@@ -25,7 +25,7 @@ enum AppFonts {
                   let cgFont = CGFont(provider) else { continue }
             var error: Unmanaged<CFError>?
             CTFontManagerRegisterGraphicsFont(cgFont, &error)
-            descriptors[name] = cgFont.fontDescriptor
+            descriptors[name] = CTFontDescriptorCreateWithGraphicsFont(cgFont, 0, nil, nil)
         }
     }
 
