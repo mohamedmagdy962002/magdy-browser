@@ -9,7 +9,7 @@ jobs:
   build:
     # macOS runner: the only place an iOS app can actually be compiled.
     # Free plan: public repos unlimited, private repos get a small monthly minute allowance.
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
