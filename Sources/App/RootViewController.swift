@@ -14,16 +14,21 @@ final class RootViewController: UITabBarController {
             title: "Downloads", image: UIImage(systemName: "arrow.down.circle"), tag: 1
         )
 
+        let media = UINavigationController(rootViewController: MediaToolsViewController())
+        media.tabBarItem = UITabBarItem(
+            title: "Media", image: UIImage(systemName: "wand.and.stars"), tag: 2
+        )
+
         let favorites = UINavigationController(rootViewController: FavoritesViewController())
         favorites.tabBarItem = UITabBarItem(
-            title: "Favorites", image: UIImage(systemName: "star"), tag: 2
+            title: "Favorites", image: UIImage(systemName: "star"), tag: 3
         )
 
         let settings = UINavigationController(rootViewController: SettingsViewController())
         settings.tabBarItem = UITabBarItem(
-            title: "Settings", image: UIImage(systemName: "gearshape"), tag: 3
+            title: "Settings", image: UIImage(systemName: "gearshape"), tag: 4
         )
 
-        viewControllers = [browser, downloads, favorites, settings]
+        viewControllers = [browser, downloads, media, favorites, settings]
     }
 }
