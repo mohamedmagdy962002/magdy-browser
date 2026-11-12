@@ -221,7 +221,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     // MARK: - Video downloader
 
-    private func openVideoDownloader() {
+    @objc private func openVideoDownloader() {
         let controller = VideoDownloaderViewController()
         let navigation = UINavigationController(rootViewController: controller)
         if let sheet = navigation.sheetPresentationController {
