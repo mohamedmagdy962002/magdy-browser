@@ -44,7 +44,11 @@ enum MediaScanner {
             }
             let candidates = raw.compactMap { item -> MediaCandidate? in
                 guard let url = URL(string: item.url) else { return nil }
-                return MediaCandidate(url: url, title: item.title, kind: item.kind)
+                return MediaCandidate(
+                    url: url,
+                    title: item.title,
+                    kind: MediaCandidate.Kind(rawValue: item.kind) ?? .file
+                )
             }
             completion(candidates)
         }

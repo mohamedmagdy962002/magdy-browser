@@ -7,8 +7,10 @@ final class HistoryViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "History"
+        title = L.t("history")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        tableView.backgroundColor = Theme.canvas
+        tableView.separatorStyle = .none
 
         searchController.searchResultsUpdater = self
         searchController.obscuresBackgroundDuringPresentation = false
@@ -57,10 +59,16 @@ final class HistoryViewController: UITableViewController {
         let entry = entries[indexPath.row]
         var content = cell.defaultContentConfiguration()
         content.text = entry.title
+        content.textProperties.font = Theme.body(15, weight: .semibold)
         content.secondaryText = entry.url
+        content.secondaryTextProperties.color = Theme.textSecondary
         content.imageProperties.maximumSize = CGSize(width: 32, height: 32)
         content.image = UIImage(systemName: "globe")
         cell.contentConfiguration = content
+        cell.backgroundColor = Theme.card
+        cell.layer.cornerRadius = Theme.corner
+        cell.layer.cornerCurve = .continuous
+        cell.selectionStyle = .none
         return cell
     }
 

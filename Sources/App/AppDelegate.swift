@@ -11,6 +11,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         if L.isRightToLeft {
             UIView.appearance().semanticContentAttribute = .forceRightToLeft
         }
+        Theme.applyGlobalAppearance()
         ContentBlocker.shared.load()
 
         let window = UIWindow(frame: UIScreen.main.bounds)

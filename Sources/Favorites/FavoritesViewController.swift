@@ -5,8 +5,10 @@ final class FavoritesViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Favorites"
+        title = L.t("favorites")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        tableView.backgroundColor = Theme.canvas
+        tableView.separatorStyle = .none
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -23,8 +25,14 @@ final class FavoritesViewController: UITableViewController {
         let favorite = store.favorites[indexPath.row]
         var content = cell.defaultContentConfiguration()
         content.text = favorite.title
+        content.textProperties.font = Theme.body(15, weight: .semibold)
         content.secondaryText = favorite.url
+        content.secondaryTextProperties.color = Theme.textSecondary
         cell.contentConfiguration = content
+        cell.backgroundColor = Theme.card
+        cell.layer.cornerRadius = Theme.corner
+        cell.layer.cornerCurve = .continuous
+        cell.selectionStyle = .none
         cell.accessoryType = .disclosureIndicator
         return cell
     }

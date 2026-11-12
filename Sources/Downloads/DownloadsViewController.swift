@@ -6,10 +6,14 @@ final class DownloadsViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Downloads"
+        title = L.t("downloads")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        tableView.backgroundColor = Theme.canvas
+        tableView.separatorStyle = .none
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 76
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "Clear",
+            title: L.t("clear"),
             style: .plain,
             target: self,
             action: #selector(clearFinished)
@@ -35,8 +39,17 @@ final class DownloadsViewController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
         let item = items[indexPath.row]
 
+        cell.backgroundColor = Theme.card
+        cell.layer.cornerRadius = Theme.corner
+        cell.layer.cornerCurve = .continuous
+        cell.layer.masksToBounds = false
+        cell.selectionStyle = .none
+
         var content = cell.defaultContentConfiguration()
         content.text = item.fileName
+        content.textProperties.font = Theme.body(15, weight: .semibold)
+        content.textProperties.color = Theme.textPrimary
+        content.secondaryTextProperties.color = Theme.textSecondary
         switch item.state {
         case .finished:
             content.secondaryText = ByteCountFormatter.string(fromByteCount: item.bytesWritten, countStyle: .file)

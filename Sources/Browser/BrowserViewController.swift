@@ -6,6 +6,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private let store = TabStore()
     private var activeTab: BrowserTab?
 
+    private let omnibox = UIView()
     private let webContainer = UIView()
     private let addressRow = UIStackView()
     private let addressField = UITextField()
@@ -15,6 +16,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private let tabButton = UIButton(type: .system)
     private let backButton = UIButton(type: .system)
     private let forwardButton = UIButton(type: .system)
+    private let downloadFAB = UIButton(type: .system)
 
     private var openURLObserver: NSObjectProtocol?
     private var downloadURLObserver: NSObjectProtocol?
@@ -56,17 +58,24 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         addressRow.spacing = 8
         addressRow.translatesAutoresizingMaskIntoConstraints = false
 
-        addressField.placeholder = "Search or enter website"
+        addressField.placeholder = L.t("search_placeholder")
         addressField.keyboardType = .webSearch
         addressField.returnKeyType = .go
         addressField.autocorrectionType = .no
         addressField.autocapitalizationType = .none
         addressField.clearButtonMode = .whileEditing
         addressField.delegate = self
-        addressField.borderStyle = .roundedRect
-        addressField.font = .systemFont(ofSize: 15)
+        addressField.font = Theme.body(16, weight: .medium)
+        addressField.textColor = Theme.textPrimary
+        addressField.backgroundColor = .clear
+        addressField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 14, height: 1))
+        addressField.leftViewMode = .always
+        addressField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: 1))
+        addressField.rightViewMode = .unlessEditing
+        addressField.clipsToBounds = true
 
         reloadButton.setImage(UIImage(systemName: "arrow.clockwise"), for: .normal)
+        reloadButton.tintColor = Theme.textSecondary
         reloadButton.addTarget(self, action: #selector(reloadTapped), for: .touchUpInside)
         reloadButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
 
@@ -75,28 +84,34 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
         progressBar.translatesAutoresizingMaskIntoConstraints = false
         progressBar.isHidden = true
-        progressBar.progressTintColor = .systemBlue
+        progressBar.progressTintColor = Theme.primary
+        progressBar.trackTintColor = .clear
 
         webContainer.translatesAutoresizingMaskIntoConstraints = false
-        webContainer.backgroundColor = .systemBackground
+        webContainer.backgroundColor = Theme.canvas
 
         toolbar.axis = .horizontal
         toolbar.distribution = .fillEqually
         toolbar.translatesAutoresizingMaskIntoConstraints = false
 
         backButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+        backButton.tintColor = Theme.textPrimary
         backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
         forwardButton.setImage(UIImage(systemName: "chevron.right"), for: .normal)
+        forwardButton.tintColor = Theme.textPrimary
         forwardButton.addTarget(self, action: #selector(forwardTapped), for: .touchUpInside)
         tabButton.setImage(UIImage(systemName: "square.on.square"), for: .normal)
+        tabButton.tintColor = Theme.textPrimary
         tabButton.addTarget(self, action: #selector(tabsTapped), for: .touchUpInside)
 
         let newTabButton = UIButton(type: .system)
         newTabButton.setImage(UIImage(systemName: "plus"), for: .normal)
+        newTabButton.tintColor = Theme.textPrimary
         newTabButton.addTarget(self, action: #selector(newTabTapped), for: .touchUpInside)
 
         let menuButton = UIButton(type: .system)
         menuButton.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
+        menuButton.tintColor = Theme.textPrimary
         menuButton.showsMenuAsPrimaryAction = true
         menuButton.menu = makeMenu()
 
@@ -106,31 +121,76 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         toolbar.addArrangedSubview(newTabButton)
         toolbar.addArrangedSubview(menuButton)
 
-        view.addSubview(addressRow)
+        // Floating primary action, shown on the start page.
+        downloadFAB.setTitle("  Download video", for: .normal)
+        downloadFAB.setImage(UIImage(systemName: "arrow.down.circle.fill"), for: .normal)
+        downloadFAB.titleLabel?.font = Theme.headline(15, weight: .semibold)
+        downloadFAB.tintColor = .white
+        downloadFAB.setTitleColor(.white, for: .normal)
+        downloadFAB.backgroundColor = Theme.primary
+        downloadFAB.layer.cornerRadius = 26
+        downloadFAB.layer.cornerCurve = .continuous
+        downloadFAB.contentEdgeInsets = UIEdgeInsets(top: 12, left: 18, bottom: 12, right: 20)
+        downloadFAB.addTarget(self, action: #selector(openVideoDownloader), for: .touchUpInside)
+        downloadFAB.translatesAutoresizingMaskIntoConstraints = false
+        downloadFAB.isHidden = true
+
+        omnibox.backgroundColor = Theme.card
+        omnibox.layer.cornerRadius = Theme.corner
+        omnibox.layer.cornerCurve = .continuous
+        omnibox.translatesAutoresizingMaskIntoConstraints = false
+        Theme.floatingShadow(omnibox)
+
+        let toolbarChrome = UIView()
+        toolbarChrome.backgroundColor = Theme.glass
+        toolbarChrome.layer.cornerRadius = 26
+        toolbarChrome.layer.cornerCurve = .continuous
+        toolbarChrome.translatesAutoresizingMaskIntoConstraints = false
+        Theme.floatingShadow(toolbarChrome)
+
+        view.addSubview(omnibox)
+        omnibox.addSubview(addressRow)
         view.addSubview(progressBar)
         view.addSubview(webContainer)
-        view.addSubview(toolbar)
+        view.addSubview(toolbarChrome)
+        toolbarChrome.addSubview(toolbar)
+        view.addSubview(downloadFAB)
+
+        Theme.fabShadow(downloadFAB)
 
         NSLayoutConstraint.activate([
-            addressRow.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            addressRow.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            addressRow.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            addressRow.heightAnchor.constraint(equalToConstant: 40),
+            omnibox.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            omnibox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            omnibox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            omnibox.heightAnchor.constraint(equalToConstant: 52),
 
-            progressBar.topAnchor.constraint(equalTo: addressRow.bottomAnchor),
+            addressRow.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor, constant: 8),
+            addressRow.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: -8),
+            addressRow.centerYAnchor.constraint(equalTo: omnibox.centerYAnchor),
+            addressRow.heightAnchor.constraint(equalToConstant: 36),
+
+            downloadFAB.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -16),
+            downloadFAB.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+
+            progressBar.topAnchor.constraint(equalTo: omnibox.bottomAnchor),
             progressBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             progressBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             progressBar.heightAnchor.constraint(equalToConstant: 2),
 
-            toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            toolbar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-            toolbar.heightAnchor.constraint(equalToConstant: 52),
+            toolbarChrome.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            toolbarChrome.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            toolbarChrome.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
+            toolbarChrome.heightAnchor.constraint(equalToConstant: 52),
+
+            toolbar.leadingAnchor.constraint(equalTo: toolbarChrome.leadingAnchor, constant: 4),
+            toolbar.trailingAnchor.constraint(equalTo: toolbarChrome.trailingAnchor, constant: -4),
+            toolbar.topAnchor.constraint(equalTo: toolbarChrome.topAnchor),
+            toolbar.bottomAnchor.constraint(equalTo: toolbarChrome.bottomAnchor),
 
             webContainer.topAnchor.constraint(equalTo: progressBar.bottomAnchor),
             webContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webContainer.bottomAnchor.constraint(equalTo: toolbar.topAnchor)
+            webContainer.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor)
         ])
     }
 
@@ -262,6 +322,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         tabButton.setTitle("\(store.tabs.count)", for: .normal)
         backButton.isEnabled = tab.webView.canGoBack
         forwardButton.isEnabled = tab.webView.canGoForward
+        // The floating download action belongs to the start page only.
+        downloadFAB.isHidden = tab.webView.url != nil
         if !addressField.isFirstResponder, let url = tab.webView.url {
             addressField.text = url.absoluteString
         }

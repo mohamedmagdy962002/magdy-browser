@@ -1,6 +1,7 @@
 import Foundation
 
 /// Builds the start page: speed-dial tiles from favorites and frequently visited sites.
+/// Styling follows the Stitch design system (canvas #F5F5FB, 20pt white cards, indigo accents).
 enum SpeedDialPage {
 
     struct Tile {
@@ -52,25 +53,27 @@ enum SpeedDialPage {
         }.joined(separator: "\n")
 
         let empty = tiles.isEmpty
-            ? "<p class=\"empty\">Downloads and favorites you add will show up here as tiles.</p>"
+            ? "<p class=\"empty\">Favorites and sites you visit will appear here as tiles.</p>"
             : ""
 
         return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
-          body{font:-apple-system-body;margin:0;padding:24px;background:#f2f2f7;color:#111}
-          h1{font-size:26px;margin:0 0 4px}
-          p.note{color:#666;font-size:14px;margin:0 0 22px}
-          p.empty{color:#8e8e93;font-size:14px}
-          .grid{display:flex;flex-wrap:wrap;gap:14px}
-          .tile{width:calc(33.333% - 10px);background:#fff;border-radius:16px;padding:14px 10px;
-                text-decoration:none;color:#111;display:flex;flex-direction:column;align-items:center;
-                box-shadow:0 1px 2px rgba(0,0,0,.08)}
-          .badge{width:46px;height:46px;border-radius:14px;color:#fff;font-weight:700;font-size:22px;
-                 display:flex;align-items:center;justify-content:center;margin-bottom:8px}
-          .label{font-size:12px;font-weight:600;text-align:center;
+          body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:24px;
+               background:#F5F5FB;color:#1C1C1E;-webkit-font-smoothing:antialiased}
+          h1{font-size:28px;font-weight:800;letter-spacing:-0.4px;margin:0 0 4px}
+          p.note{color:#8E8E93;font-size:14px;margin:0 0 22px}
+          p.empty{color:#8E8E93;font-size:14px;text-align:center;padding:40px 0}
+          .grid{display:flex;flex-wrap:wrap;gap:16px}
+          .tile{width:calc(33.333% - 11px);background:#fff;border-radius:20px;padding:16px 10px 14px;
+                text-decoration:none;color:#1C1C1E;display:flex;flex-direction:column;align-items:center;
+                box-shadow:0 2px 8px rgba(74,71,240,.04),0 8px 24px rgba(28,28,30,.06)}
+          .badge{width:48px;height:48px;border-radius:14px;color:#fff;font-weight:800;font-size:22px;
+                 display:flex;align-items:center;justify-content:center;margin-bottom:10px;
+                 box-shadow:0 6px 14px rgba(74,71,240,.22)}
+          .label{font-size:13px;font-weight:700;text-align:center;
                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-          .host{font-size:10px;color:#8e8e93;margin-top:2px;
+          .host{font-size:11px;color:#8E8E93;margin-top:2px;
                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
         </style></head>
         <body>

@@ -49,26 +49,37 @@ final class VideoDownloaderViewController: UITableViewController {
         header.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 110)
 
         urlField.placeholder = "Paste a video page or media link"
-        urlField.borderStyle = .roundedRect
+        urlField.borderStyle = .none
+        urlField.backgroundColor = Theme.card
+        urlField.layer.cornerRadius = Theme.corner
+        urlField.layer.cornerCurve = .continuous
+        urlField.font = Theme.body(15, weight: .medium)
+        urlField.textColor = Theme.textPrimary
         urlField.keyboardType = .webSearch
         urlField.autocorrectionType = .no
         urlField.autocapitalizationType = .none
         urlField.clearButtonMode = .whileEditing
+        urlField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 14, height: 1))
+        urlField.leftViewMode = .always
         urlField.translatesAutoresizingMaskIntoConstraints = false
+        Theme.floatingShadow(urlField)
 
         statusLabel.text = "Scans the page for direct links, HLS and DASH streams."
-        statusLabel.font = .systemFont(ofSize: 13)
-        statusLabel.textColor = .secondaryLabel
+        statusLabel.font = Theme.body(13)
+        statusLabel.textColor = Theme.textSecondary
         statusLabel.numberOfLines = 0
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let scanButton = UIButton(type: .system)
         scanButton.setTitle("Scan", for: .normal)
+        scanButton.titleLabel?.font = Theme.headline(15, weight: .semibold)
         scanButton.setTitleColor(.white, for: .normal)
-        scanButton.backgroundColor = .systemBlue
-        scanButton.layer.cornerRadius = 8
+        scanButton.backgroundColor = Theme.primary
+        scanButton.layer.cornerRadius = 12
+        scanButton.layer.cornerCurve = .continuous
         scanButton.translatesAutoresizingMaskIntoConstraints = false
         scanButton.addTarget(self, action: #selector(scanTapped), for: .touchUpInside)
+        Theme.fabShadow(scanButton)
 
         header.addSubview(urlField)
         header.addSubview(scanButton)
@@ -133,9 +144,16 @@ final class VideoDownloaderViewController: UITableViewController {
         let candidate = candidates[indexPath.row]
         var content = cell.defaultContentConfiguration()
         content.text = candidate.title
+        content.textProperties.font = Theme.body(15, weight: .semibold)
         content.secondaryText = candidate.kind.label
+        content.secondaryTextProperties.color = Theme.textSecondary
         content.image = UIImage(systemName: candidate.kind.symbolName)
+        content.imageProperties.tintColor = Theme.primary
         cell.contentConfiguration = content
+        cell.backgroundColor = Theme.card
+        cell.layer.cornerRadius = Theme.corner
+        cell.layer.cornerCurve = .continuous
+        cell.selectionStyle = .none
         cell.accessoryType = .disclosureIndicator
         return cell
     }
