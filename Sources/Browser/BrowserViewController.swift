@@ -310,7 +310,7 @@ extension BrowserViewController {
         textField.resignFirstResponder()
         guard let tab = activeTab else { return true }
         let input = textField.text ?? ""
-        if let url = URL(string: input)?.magdyNavigable {
+        if let url = input.magdyNavigable {
             tab.load(url: url)
         } else {
             tab.loadStartPage()

@@ -16,27 +16,23 @@ enum UserDefaultsKey {
     }
 }
 
-extension URL {
-    /// Treats a bare host ("example.com") as https, anything with spaces as a search query.
+extension String {
+    /// Turns typed text into a URL: bare hosts get https, anything with spaces becomes a search.
     var magdyNavigable: URL? {
-        let text = trimmedText
+        let text = trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
+
         if text.contains(" ") { return searchURL(for: text) }
         if let url = URL(string: text), let scheme = url.scheme, !scheme.isEmpty, url.host != nil {
             return url
         }
-        if text.contains("."), !text.contains(" ") {
-            return URL(string: "https://\(text)")
-        }
+        if text.contains(".") { return URL(string: "https://\(text)") }
         return searchURL(for: text)
     }
 
-    private var trimmedText: String {
-        self.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private func searchURL(for query: String) -> URL? {
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+#"))
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: allowed) ?? query
         return URL(string: "https://duckduckgo.com/?q=\(encoded)")
     }
 }
