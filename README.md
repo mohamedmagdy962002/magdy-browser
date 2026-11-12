@@ -41,7 +41,42 @@ MagdyBrowser/
 - An Apple ID. A **free personal team** is enough for the app as shipped (no extensions,
   no special entitlements). Signing then expires after 7 days and must be refreshed.
 
-## Build
+## Get an IPA without a Mac (Windows)
+
+The project builds on GitHub's macOS runners and hands you a ready-to-sideload IPA.
+
+```powershell
+# 1. Create an empty repo at https://github.com/new  (name: magdy-browser, public = unlimited free minutes)
+
+# 2. From this folder:
+.\scripts\push_and_build.ps1 -RepoUrl https://github.com/<your-user>/magdy-browser.git
+#    (GitHub asks for username + Personal Access Token as the password)
+
+# 3. The Actions tab opens automatically. Wait for "Build IPA" to finish,
+#    then download the artifact "MagdyBrowser-ipa" (a .zip containing MagdyBrowser-unsigned.ipa).
+```
+
+The CI builds **unsigned** on purpose — no Apple credentials live in anyone else's CI.
+Your Apple ID signs the app locally at install time.
+
+### Install on a Windows PC + iPhone
+
+**Sideloadly** (simplest, works from Windows):
+1. Install [Apple Devices](https://apps.apple.com/app/apple-devices/id1101183) (or iTunes) for the USB driver.
+2. Install [Sideloadly](https://sideloadly.io).
+3. Connect the iPhone by USB, tap "Trust" on the phone.
+4. Drag `MagdyBrowser-unsigned.ipa` into Sideloadly, enter your Apple ID, press **Start**.
+
+**AltStore**: import the IPA, then AltStore re-signs it automatically on the same Wi-Fi
+(same Apple ID) every 7 days.
+
+**TrollStore**: on a TrollStore device, install the IPA directly — no Apple ID needed.
+
+> A free Apple ID's signature expires after 7 days. AltStore refreshes automatically;
+> with Sideloadly you re-run the install once a week. A paid developer account ($99/yr)
+> gives 1 year.
+
+## Build on a Mac
 
 ```bash
 cd MagdyBrowser
