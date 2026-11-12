@@ -124,7 +124,7 @@ final class VideoUpscaler {
             while videoInput.isReadyForMoreMediaData {
                 guard let sample = videoOutput.copyNextSampleBuffer() else {
                     videoInput.markAsFinished()
-                    reader.cancelReading()
+                    // Do not cancel the reader: the audio pass-through still needs it.
                     break
                 }
                 guard let imageBuffer = CMSampleBufferGetImageBuffer(sample) else { continue }
