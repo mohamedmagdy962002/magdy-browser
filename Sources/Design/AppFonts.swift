@@ -22,10 +22,11 @@ enum AppFonts {
         for name in familyNames {
             guard let data = fontData(named: name),
                   let provider = CGDataProvider(data: data as CFData),
-                  let cgFont = CGFont(provider) else { continue }
+                  let cgFont = CGFont(provider),
+                  let descriptor = CTFontManagerCreateFontDescriptorFromData(data as CFData) else { continue }
             var error: Unmanaged<CFError>?
             CTFontManagerRegisterGraphicsFont(cgFont, &error)
-            descriptors[name] = CTFontDescriptorCreateWithGraphicsFont(cgFont, 0, nil, nil)
+            descriptors[name] = descriptor
         }
     }
 
