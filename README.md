@@ -11,6 +11,13 @@ branding or third-party SDKs were copied.
 - **Favorites, tab switcher, DuckDuckGo search, cache/cookie cleanup.**
 - **Media tools** — edit MP3/ID3 metadata (title, artist, album, year, genre, track, comment, cover art)
   and upscale downloaded video 2x/4x with a Lanczos resample.
+- **Video downloader** — paste any page link: the app scans it for direct video/audio files,
+  HLS (`.m3u8`) and DASH manifests, downloads the segments and remuxes them to `.mp4`.
+  Share sheet → "Open in Magdy" also drops a link straight into the downloader.
+- **History, reader mode, find-in-page, speed-dial home, widget + share/action extensions.**
+- **86k-rule blocking** from the real EasyList + EasyPrivacy lists.
+- **Localization** — English, Arabic (RTL), French, Spanish, German, Turkish.
+- **Design** — full UI redesigned in Google Stitch (see `design/DESIGN.md`).
 
 ## Project layout
 
