@@ -3,6 +3,8 @@ import Foundation
 extension Notification.Name {
     /// Posted with a URL as the notification object to open a link in the browser.
     static let magdyOpenURL = Notification.Name("com.magdy.openURL")
+    /// Posted with a URL as the notification object to download a media URL.
+    static let magdyDownloadURL = Notification.Name("com.magdy.downloadURL")
 }
 
 enum UserDefaultsKey {

@@ -36,7 +36,7 @@ final class ShareViewController: UIViewController {
     private func open(_ text: String) {
         guard !text.isEmpty,
               let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "magdy://open?url=\(encoded)") else {
+              let url = URL(string: "magdy://download?url=\(encoded)") else {
             finish()
             return
         }

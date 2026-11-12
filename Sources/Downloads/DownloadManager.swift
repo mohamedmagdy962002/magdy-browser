@@ -29,6 +29,7 @@ final class DownloadManager: NSObject {
     private var downloadItems: [ObjectIdentifier: DownloadItem] = [:]
     private var pendingSourceURL: [ObjectIdentifier: URL] = [:]
     private var taskItems: [Int: DownloadItem] = [:]
+    private var hlsItems: [UUID: DownloadItem] = [:]
     private var timers: [UUID: Timer] = [:]
 
     private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
@@ -77,6 +78,47 @@ final class DownloadManager: NSObject {
         item.cancel = { task.cancel() }
         insert(item)
         task.resume()
+    }
+
+    /// HLS playlist download: all segments are fetched, merged and remuxed to .mp4.
+    func startHLS(url: URL, referer: URL?, cookies: [HTTPCookie]) {
+        let item = DownloadItem()
+        item.fileName = uniqueName(url.deletingPathExtension().lastPathComponent + ".mp4")
+        item.sourceURL = url
+        item.state = .running
+        hlsItems[item.id] = item
+        insert(item)
+
+        HLSDownloader.download(
+            playlist: url,
+            cookies: cookies,
+            progress: { [weak self] value in
+                item.progress = value
+                self?.notify()
+            },
+            completion: { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let fileURL):
+                    let destination = self.directory.appendingPathComponent(self.uniqueName(item.fileName))
+                    try? FileManager.default.removeItem(at: destination)
+                    do {
+                        try FileManager.default.moveItem(at: fileURL, to: destination)
+                        item.localURL = destination
+                        item.fileName = destination.lastPathComponent
+                    } catch {
+                        item.localURL = fileURL
+                    }
+                    item.state = .finished
+                    item.progress = 1
+                case .failure(let error):
+                    item.state = .failed
+                    item.errorMessage = error.localizedDescription
+                }
+                self.hlsItems.removeValue(forKey: item.id)
+                self.notify()
+            }
+        )
     }
 
     func cancel(_ item: DownloadItem) {

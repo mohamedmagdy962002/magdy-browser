@@ -17,6 +17,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private let forwardButton = UIButton(type: .system)
 
     private var openURLObserver: NSObjectProtocol?
+    private var downloadURLObserver: NSObjectProtocol?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -30,11 +31,21 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             guard let self, let url = note.object as? URL else { return }
             self.open(url: url, privateMode: false)
         }
+
+        downloadURLObserver = NotificationCenter.default.addObserver(
+            forName: .magdyDownloadURL, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self, let url = note.object as? URL else { return }
+            self.handleIncomingDownload(url)
+        }
     }
 
     deinit {
         if let openURLObserver {
             NotificationCenter.default.removeObserver(openURLObserver)
+        }
+        if let downloadURLObserver {
+            NotificationCenter.default.removeObserver(downloadURLObserver)
         }
     }
 
@@ -133,6 +144,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let media = UIAction(title: L.t("download_media"), image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
             self?.downloadMediaFromPage()
         }
+        let downloader = UIAction(title: "Video Downloader", image: UIImage(systemName: "square.and.arrow.down")) { [weak self] _ in
+            self?.openVideoDownloader()
+        }
         let reader = UIAction(title: L.t("reader_mode"), image: UIImage(systemName: "text.alignleft")) { [weak self] _ in
             self?.openReaderMode()
         }
@@ -142,7 +156,42 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let closeAll = UIAction(title: L.t("close_all_tabs"), image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in
             self?.closeAllTabs()
         }
-        return UIMenu(children: [privateTab, favorite, media, reader, find, closeAll])
+        return UIMenu(children: [privateTab, favorite, media, downloader, reader, find, closeAll])
+    }
+
+    // MARK: - Video downloader
+
+    private func openVideoDownloader() {
+        let controller = VideoDownloaderViewController()
+        let navigation = UINavigationController(rootViewController: controller)
+        if let sheet = navigation.sheetPresentationController {
+            sheet.detents = [.medium(), .large()]
+        }
+        present(navigation, animated: true)
+    }
+
+    /// Handles a URL that arrived from the share sheet or another app.
+    private func handleIncomingDownload(_ url: URL) {
+        let ext = url.pathExtension.lowercased()
+        let direct = ["mp4", "m4v", "mov", "webm", "mkv", "mp3", "m4a", "aac", "wav", "flac", "zip", "pdf", "apk"]
+
+        if ext == "m3u8" {
+            activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                DownloadManager.shared.startHLS(url: url, referer: nil, cookies: cookies)
+            }
+            return
+        }
+        if direct.contains(ext) {
+            activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                DownloadManager.shared.start(url: url, referer: nil, cookies: cookies)
+            }
+            return
+        }
+        let controller = VideoDownloaderViewController()
+        let navigation = UINavigationController(rootViewController: controller)
+        present(navigation, animated: true) {
+            controller.begin(url: url)
+        }
     }
 
     // MARK: - Reader mode / find

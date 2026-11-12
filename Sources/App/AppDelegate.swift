@@ -32,6 +32,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let target = components?.queryItems?.first(where: { $0.name == "url" })?.value
         let search = components?.queryItems?.first(where: { $0.name == "q" })?.value
 
+        if url.host == "download", let target, let destination = URL(string: target) {
+            NotificationCenter.default.post(name: .magdyDownloadURL, object: destination)
+            return true
+        }
         if let target, let destination = URL(string: target) {
             NotificationCenter.default.post(name: .magdyOpenURL, object: destination)
             return true
