@@ -177,7 +177,7 @@ extension TagEditorViewController: PHPickerViewControllerDelegate {
         provider.loadDataRepresentation(forTypeIdentifier: "public.image") { [weak self] data, _ in
             guard let data, let image = UIImage(data: data) else { return }
             let resized = self?.resize(image, maxDimension: 700)
-            guard let jpeg = resized.jpegData(compressionQuality: 0.85) else { return }
+            guard let resized, let jpeg = resized.jpegData(compressionQuality: 0.85) else { return }
             DispatchQueue.main.async {
                 self?.artworkData = jpeg
                 self?.artworkView.image = resized

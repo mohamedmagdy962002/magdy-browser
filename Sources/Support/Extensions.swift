@@ -32,7 +32,7 @@ extension URL {
     }
 
     private var trimmedText: String {
-        trimmingCharacters(in: .whitespacesAndNewlines)
+        self.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func searchURL(for query: String) -> URL? {

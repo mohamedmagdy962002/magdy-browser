@@ -18,10 +18,10 @@ final class ContentBlocker {
         let identifiers = ["ads", "trackers"]
         for identifier in identifiers {
             guard let url = Bundle.main.url(forResource: "blocklist_\(identifier)", withExtension: "json"),
-                  let data = try? Data(contentsOf: url) else { continue }
+                  let encoded = try? String(contentsOf: url, encoding: .utf8) else { continue }
             WKContentRuleListStore.default().compileContentRuleList(
                 forIdentifier: "MagdyBlockList.\(identifier)",
-                encodedContentRuleList: data
+                encodedContentRuleList: encoded
             ) { [weak self] list, _ in
                 guard let self, let list else { return }
                 self.ruleLists.append(list)
@@ -31,6 +31,8 @@ final class ContentBlocker {
     }
 
     func apply(to controller: WKUserContentController) {
-        controller.addAll(ruleLists)
+        for list in ruleLists {
+            controller.add(list)
+        }
     }
 }

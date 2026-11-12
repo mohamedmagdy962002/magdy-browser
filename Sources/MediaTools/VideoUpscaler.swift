@@ -42,7 +42,13 @@ final class VideoUpscaler {
         )
         let duration = asset.duration.seconds
 
-        let reader = AVAssetReader(asset: asset)
+        let reader: AVAssetReader
+        do {
+            reader = try AVAssetReader(asset: asset)
+        } catch {
+            completion(.failure(.cannotAddOutput))
+            return
+        }
         let videoOutput = AVAssetReaderTrackOutput(
             track: track,
             outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
@@ -128,7 +134,7 @@ final class VideoUpscaler {
                     break
                 }
                 guard let imageBuffer = CMSampleBufferGetImageBuffer(sample) else { continue }
-                guard let scaled = scale(imageBuffer: imageBuffer, to: targetSize) else { continue }
+                guard let scaled = VideoUpscaler.resample(imageBuffer: imageBuffer, to: targetSize) else { continue }
 
                 let presentationTime = CMSampleBufferGetPresentationTimeStamp(sample)
                 if adaptor.append(scaled, withPresentationTime: presentationTime) {
@@ -164,7 +170,7 @@ final class VideoUpscaler {
         }
     }
 
-    private static func scale(imageBuffer: CVImageBuffer, to size: CGSize) -> CVPixelBuffer? {
+    private static func resample(imageBuffer: CVImageBuffer, to size: CGSize) -> CVPixelBuffer? {
         var scaledBuffer: CVPixelBuffer?
         let attributes: [CFString: Any] = [
             kCVPixelBufferCGImageCompatibilityKey: true,

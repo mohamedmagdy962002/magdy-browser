@@ -305,7 +305,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
 // MARK: - Address field
 
-extension BrowserViewController: UITextFieldDelegate {
+extension BrowserViewController {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         guard let tab = activeTab else { return true }
