@@ -15,7 +15,10 @@ final class ContentBlocker {
         guard !didLoad else { return }
         didLoad = true
 
-        let identifiers = ["ads", "trackers"]
+        var identifiers = ["ads", "trackers"]
+        if UserDefaultsKey.bool(UserDefaultsKey.strongBlocking, default: true) {
+            identifiers.append("full")
+        }
         for identifier in identifiers {
             guard let url = Bundle.main.url(forResource: "blocklist_\(identifier)", withExtension: "json"),
                   let encoded = try? String(contentsOf: url, encoding: .utf8) else { continue }

@@ -24,11 +24,16 @@ final class RootViewController: UITabBarController {
             title: "Favorites", image: UIImage(systemName: "star"), tag: 3
         )
 
-        let settings = UINavigationController(rootViewController: SettingsViewController())
-        settings.tabBarItem = UITabBarItem(
-            title: "Settings", image: UIImage(systemName: "gearshape"), tag: 4
+        let history = UINavigationController(rootViewController: HistoryViewController())
+        history.tabBarItem = UITabBarItem(
+            title: L.t("history"), image: UIImage(systemName: "clock.arrow.circlepath"), tag: 4
         )
 
-        viewControllers = [browser, downloads, media, favorites, settings]
+        let settings = UINavigationController(rootViewController: SettingsViewController())
+        settings.tabBarItem = UITabBarItem(
+            title: L.t("settings"), image: UIImage(systemName: "gearshape"), tag: 5
+        )
+
+        viewControllers = [browser, downloads, media, favorites, history, settings]
     }
 }

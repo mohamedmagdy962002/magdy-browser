@@ -15,27 +15,6 @@ final class BrowserTab: NSObject {
 
     private var progressObservation: NSKeyValueObservation?
 
-    static let startPage = """
-    <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-    <style>
-      body{font:-apple-system-body;margin:0;padding:28px;background:#f2f2f7;color:#111}
-      h1{font-size:24px;margin:0 0 6px}
-      p{color:#555;font-size:15px;margin:0 0 20px}
-      a{display:block;padding:14px;background:#fff;border-radius:14px;margin-bottom:10px;
-         text-decoration:none;color:#0a84ff;font-weight:600}
-      .free{margin-top:24px;color:#8e8e93;font-size:13px}
-    </style></head>
-    <body>
-      <h1>Magdy Browser</h1>
-      <p>Free. Unlimited. No account, no subscription, no download caps.</p>
-      <a href="https://duckduckgo.com">Search with DuckDuckGo</a>
-      <a href="https://www.wikipedia.org">Wikipedia</a>
-      <a href="https://github.com">GitHub</a>
-      <a href="https://news.ycombinator.com">Hacker News</a>
-      <div class="free">Private tabs leave no history behind.</div>
-    </body></html>
-    """
-
     init(isPrivate: Bool) {
         self.isPrivate = isPrivate
 
@@ -66,7 +45,7 @@ final class BrowserTab: NSObject {
     }
 
     func loadStartPage() {
-        webView.loadHTMLString(Self.startPage, baseURL: nil)
+        webView.loadHTMLString(SpeedDialPage.html(), baseURL: nil)
     }
 
     func load(url: URL) {
@@ -94,6 +73,10 @@ extension BrowserTab: WKNavigationDelegate {
         if let pageTitle = webView.title, !pageTitle.isEmpty, pageTitle != title {
             title = pageTitle
             onTitleChange?(self)
+        }
+        // Private tabs leave no trace on the device.
+        if !isPrivate, let url = webView.url {
+            HistoryStore.shared.record(url: url, title: webView.title)
         }
     }
 

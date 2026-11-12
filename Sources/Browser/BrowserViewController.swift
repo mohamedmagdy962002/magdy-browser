@@ -124,19 +124,57 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     }
 
     private func makeMenu() -> UIMenu {
-        let privateTab = UIAction(title: "New Private Tab", image: UIImage(systemName: "eye.slash")) { [weak self] _ in
+        let privateTab = UIAction(title: L.t("private_tab"), image: UIImage(systemName: "eye.slash")) { [weak self] _ in
             self?.openNewTab(privateMode: true)
         }
-        let favorite = UIAction(title: "Add to Favorites", image: UIImage(systemName: "star")) { [weak self] _ in
+        let favorite = UIAction(title: L.t("add_to_favorites"), image: UIImage(systemName: "star")) { [weak self] _ in
             self?.addCurrentPageToFavorites()
         }
-        let media = UIAction(title: "Download Media from Page", image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
+        let media = UIAction(title: L.t("download_media"), image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
             self?.downloadMediaFromPage()
         }
-        let closeAll = UIAction(title: "Close All Tabs", image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in
+        let reader = UIAction(title: L.t("reader_mode"), image: UIImage(systemName: "text.alignleft")) { [weak self] _ in
+            self?.openReaderMode()
+        }
+        let find = UIAction(title: L.t("find_in_page"), image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in
+            self?.openFindInPage()
+        }
+        let closeAll = UIAction(title: L.t("close_all_tabs"), image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in
             self?.closeAllTabs()
         }
-        return UIMenu(children: [privateTab, favorite, media, closeAll])
+        return UIMenu(children: [privateTab, favorite, media, reader, find, closeAll])
+    }
+
+    // MARK: - Reader mode / find
+
+    private func openReaderMode() {
+        guard let tab = activeTab else { return }
+        ReaderMode.extract(from: tab.webView) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch result {
+                case .success(let article):
+                    let reader = ReaderViewController(article: article)
+                    let navigation = UINavigationController(rootViewController: reader)
+                    self.present(navigation, animated: true)
+                case .failure:
+                    let alert = UIAlertController(
+                        title: L.t("no_media_found"),
+                        message: "No readable content found on this page.",
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
+        }
+    }
+
+    private func openFindInPage() {
+        guard let tab = activeTab else { return }
+        let controller = FindInPageController(webView: tab.webView)
+        controller.modalPresentationStyle = .overCurrentContext
+        present(controller, animated: true)
     }
 
     // MARK: - Tabs

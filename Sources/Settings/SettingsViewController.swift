@@ -4,18 +4,20 @@ import WebKit
 final class SettingsViewController: UITableViewController {
 
     private enum Row {
-        case blockAds, blockTrackers, defaultPrivate, clearData, clearCache, about
+        case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache, language, about
     }
 
     private let sections: [(title: String, rows: [Row])] = [
-        ("Privacy", [.blockAds, .blockTrackers, .defaultPrivate, .clearData]),
-        ("Storage", [.clearCache]),
-        ("About", [.about])
+        (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking]),
+        (L.t("history"), [.defaultPrivate, .clearData]),
+        (L.t("clear_cache"), [.clearCache]),
+        (L.t("language"), [.language]),
+        (L.t("about"), [.about])
     ]
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Settings"
+        title = L.t("settings")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
     }
 
@@ -35,26 +37,33 @@ final class SettingsViewController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
         cell.accessoryView = nil
         cell.accessoryType = .none
-        cell.detailTextLabel?.text = nil
+        cell.textLabel?.textColor = .label
 
         switch sections[indexPath.section].rows[indexPath.row] {
         case .blockAds:
-            cell.textLabel?.text = "Block ads and popups"
+            cell.textLabel?.text = L.t("block_ads")
             cell.accessoryView = makeSwitch(key: UserDefaultsKey.blockAds, default: true)
         case .blockTrackers:
-            cell.textLabel?.text = "Block trackers"
+            cell.textLabel?.text = L.t("block_trackers")
             cell.accessoryView = makeSwitch(key: UserDefaultsKey.blockTrackers, default: true)
+        case .strongBlocking:
+            cell.textLabel?.text = "Extended blocking (86k rules)"
+            cell.accessoryView = makeSwitch(key: UserDefaultsKey.strongBlocking, default: true)
         case .defaultPrivate:
-            cell.textLabel?.text = "Open new tabs in Private Mode"
+            cell.textLabel?.text = L.t("default_private")
             cell.accessoryView = makeSwitch(key: UserDefaultsKey.defaultPrivate, default: false)
         case .clearData:
-            cell.textLabel?.text = "Clear browsing data"
+            cell.textLabel?.text = L.t("clear_data")
             cell.accessoryType = .disclosureIndicator
         case .clearCache:
-            cell.textLabel?.text = "Clear cache"
+            cell.textLabel?.text = L.t("clear_cache")
             cell.accessoryType = .disclosureIndicator
+        case .language:
+            cell.textLabel?.text = L.t("language")
+            cell.accessoryType = .disclosureIndicator
+            cell.detailTextLabel?.text = L.resolvedLanguage.uppercased()
         case .about:
-            cell.textLabel?.text = "Magdy Browser 1.0"
+            cell.textLabel?.text = L.t("about")
             cell.textLabel?.textColor = .secondaryLabel
         }
         return cell
@@ -67,6 +76,8 @@ final class SettingsViewController: UITableViewController {
             clearBrowsingData()
         case .clearCache:
             clearCache()
+        case .language:
+            chooseLanguage()
         default:
             break
         }
@@ -85,7 +96,7 @@ final class SettingsViewController: UITableViewController {
     @objc private func switchChanged(_ sender: UISwitch) {
         guard let key = sender.accessibilityIdentifier else { return }
         UserDefaults.standard.set(sender.isOn, forKey: key)
-        guard key != UserDefaultsKey.defaultPrivate else { return }
+        guard key == UserDefaultsKey.blockAds || key == UserDefaultsKey.blockTrackers else { return }
 
         // Filter lists are compiled into the web view configuration, so blocking
         // changes apply to tabs opened after the switch.
@@ -94,8 +105,24 @@ final class SettingsViewController: UITableViewController {
             message: "Blocking changes apply the next time you open a new tab.",
             preferredStyle: .alert
         )
-        alert.addAction(UIAlertAction(title: "OK", style: .default))
+        alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
         present(alert, animated: true)
+    }
+
+    private func chooseLanguage() {
+        let options = [("system", "System"), ("en", "English"), ("ar", "العربية"), ("fr", "Français"), ("es", "Español"), ("de", "Deutsch"), ("tr", "Türkçe")]
+        let sheet = UIAlertController(title: L.t("language"), message: nil, preferredStyle: .actionSheet)
+        for (code, name) in options {
+            sheet.addAction(UIAlertAction(title: name, style: .default) { _ in
+                UserDefaults.standard.set(code, forKey: UserDefaultsKey.language)
+                self.tableView.reloadData()
+            })
+        }
+        sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 0, section: 3))
+        }
+        present(sheet, animated: true)
     }
 
     private func clearBrowsingData() {
@@ -108,13 +135,8 @@ final class SettingsViewController: UITableViewController {
             WKWebsiteDataTypeIndexedDBDatabases
         ]
         WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: .distantPast) { [weak self] in
-            let alert = UIAlertController(
-                title: "Done",
-                message: "Cache, cookies and site data cleared.",
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
-            self?.present(alert, animated: true)
+            HistoryStore.shared.clear()
+            self?.showAlert(title: L.t("done"), message: "Cache, cookies, site data and history cleared.")
         }
     }
 
@@ -123,13 +145,13 @@ final class SettingsViewController: UITableViewController {
             ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache],
             modifiedSince: .distantPast
         ) { [weak self] in
-            let alert = UIAlertController(
-                title: "Done",
-                message: "Cache cleared.",
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: "OK", style: .default))
-            self?.present(alert, animated: true)
+            self?.showAlert(title: L.t("done"), message: "Cache cleared.")
         }
+    }
+
+    private func showAlert(title: String, message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
+        present(alert, animated: true)
     }
 }
