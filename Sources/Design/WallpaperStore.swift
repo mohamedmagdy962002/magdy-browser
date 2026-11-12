@@ -2,11 +2,13 @@ import UIKit
 
 /// Start-page wallpaper. The chosen image is copied into the app container so the
 /// web view can reference it with a relative URL.
-enum WallpaperStore {
+final class WallpaperStore {
     static let shared = WallpaperStore()
 
     private let selectionKey = "magdy.wallpaper"
     private static let fileName = "current-wallpaper.png"
+
+    private init() {}
 
     /// Wallpapers shipped in the bundle.
     static func available() -> [String] {

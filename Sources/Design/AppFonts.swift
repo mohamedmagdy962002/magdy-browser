@@ -20,12 +20,12 @@ enum AppFonts {
         registered = true
 
         for name in familyNames {
-            guard let data = fontData(named: name) else { continue }
+            guard let data = fontData(named: name),
+                  let provider = CGDataProvider(data: data as CFData),
+                  let cgFont = CGFont(provider) else { continue }
             var error: Unmanaged<CFError>?
-            CTFontManagerRegisterGraphicsFont(data as CFData, &error)
-            if let descriptor = CTFontManagerCreateFontDescriptorFromData(data as CFData) {
-                descriptors[name] = descriptor
-            }
+            CTFontManagerRegisterGraphicsFont(cgFont, &error)
+            descriptors[name] = cgFont.fontDescriptor
         }
     }
 
@@ -50,11 +50,8 @@ enum AppFonts {
             kCTFontWeightTrait: CGFloat(weight.rawValue)
         ]
         let attributes: [CFString: Any] = [kCTFontTraitsAttribute: traits]
-        guard let varied = CTFontDescriptorCreateCopyWithAttributes(descriptor, attributes as CFDictionary),
-              let font = UIFont(descriptor: varied, size: size) else {
-            return UIFont.systemFont(ofSize: size, weight: weight)
-        }
-        return font
+        let varied = CTFontDescriptorCreateCopyWithAttributes(descriptor, attributes as CFDictionary)
+        return UIFont(descriptor: varied, size: size)
     }
 
     /// Headline face: Space Grotesk, falling back to the system rounded face.
