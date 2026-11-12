@@ -14,6 +14,21 @@ final class BrowserTab: NSObject {
     var onProgress: ((BrowserTab, Double) -> Void)?
 
     private var progressObservation: NSKeyValueObservation?
+    private var blockerObserver: UUID?
+    private var appliedRuleListIDs: Set<String> = []
+
+    deinit {
+        if let blockerObserver {
+            ContentBlocker.shared.removeObserver(blockerObserver)
+        }
+    }
+
+    private func applyNewRuleLists() {
+        for list in ContentBlocker.shared.ruleLists where !appliedRuleListIDs.contains(list.identifier) {
+            appliedRuleListIDs.insert(list.identifier)
+            webView.configuration.userContentController.add(list)
+        }
+    }
 
     init(isPrivate: Bool) {
         self.isPrivate = isPrivate
@@ -35,6 +50,12 @@ final class BrowserTab: NSObject {
         webView.customUserAgent = "MagdyBrowser/1.0"
 
         ContentBlocker.shared.apply(to: configuration.userContentController)
+        appliedRuleListIDs = Set(ContentBlocker.shared.ruleLists.map(\.identifier))
+
+        // Newly compiled filter lists are attached to this tab as they arrive.
+        blockerObserver = ContentBlocker.shared.observe { [weak self] in
+            self?.applyNewRuleLists()
+        }
 
         progressObservation = webView.observe(\.estimatedProgress, options: [.new]) { [weak self] webView, _ in
             guard let self else { return }
@@ -45,7 +66,8 @@ final class BrowserTab: NSObject {
     }
 
     func loadStartPage() {
-        webView.loadHTMLString(SpeedDialPage.html(), baseURL: nil)
+        // Documents is the base URL so the wallpaper resolves as a relative resource.
+        webView.loadHTMLString(SpeedDialPage.html(), baseURL: WallpaperStore.shared.documentsURL)
     }
 
     func load(url: URL) {

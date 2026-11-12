@@ -26,15 +26,13 @@ enum Theme {
 
     // MARK: - Type
 
-    /// Geometric headline face (Space Grotesk in Stitch -> SF Rounded on iOS).
+    /// Geometric headline face (Space Grotesk in Stitch -> bundled Space Grotesk / SF Rounded).
     static func headline(_ size: CGFloat, weight: UIFont.Weight = .bold) -> UIFont {
-        let base = UIFont.systemFont(ofSize: size, weight: weight)
-        guard let descriptor = base.fontDescriptor.withDesign(.rounded) else { return base }
-        return UIFont(descriptor: descriptor, size: size)
+        AppFonts.headline(size, weight: weight)
     }
 
     static func body(_ size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
-        UIFont.systemFont(ofSize: size, weight: weight)
+        AppFonts.body(size, weight: weight)
     }
 
     // MARK: - Elevation

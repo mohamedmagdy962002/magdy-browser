@@ -41,6 +41,17 @@ enum SpeedDialPage {
 
     static func html() -> String {
         let tiles = tiles()
+        let wallpaper = WallpaperStore.shared.materialiseSelection()
+        let backgroundStyle: String
+        if let wallpaper {
+            backgroundStyle = """
+            background-image:linear-gradient(180deg,rgba(245,245,251,.72) 0%,rgba(245,245,251,.92) 55%,rgba(245,245,251,.98) 100%),url('\(escape(wallpaper))');
+            background-size:cover;background-position:center;
+            """
+        } else {
+            backgroundStyle = "background:#F5F5FB;"
+        }
+
         let tileHTML = tiles.map { tile in
             let url = escape(tile.url)
             return """
@@ -60,7 +71,8 @@ enum SpeedDialPage {
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
           body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:24px;
-               background:#F5F5FB;color:#1C1C1E;-webkit-font-smoothing:antialiased}
+               color:#1C1C1E;-webkit-font-smoothing:antialiased;min-height:100vh;
+               \(backgroundStyle)}
           h1{font-size:28px;font-weight:800;letter-spacing:-0.4px;margin:0 0 4px}
           p.note{color:#8E8E93;font-size:14px;margin:0 0 22px}
           p.empty{color:#8E8E93;font-size:14px;text-align:center;padding:40px 0}

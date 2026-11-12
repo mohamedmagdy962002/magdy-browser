@@ -4,14 +4,15 @@ import WebKit
 final class SettingsViewController: UITableViewController {
 
     private enum Row {
-        case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache, language, about
+        case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache
+        case filterLists, wallpaper, language, about
     }
 
     private let sections: [(title: String, rows: [Row])] = [
         (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking]),
         (L.t("history"), [.defaultPrivate, .clearData]),
         (L.t("clear_cache"), [.clearCache]),
-        (L.t("language"), [.language]),
+        (L.t("language"), [.language, .filterLists, .wallpaper]),
         (L.t("about"), [.about])
     ]
 
@@ -62,6 +63,12 @@ final class SettingsViewController: UITableViewController {
             cell.textLabel?.text = L.t("language")
             cell.accessoryType = .disclosureIndicator
             cell.detailTextLabel?.text = L.resolvedLanguage.uppercased()
+        case .filterLists:
+            cell.textLabel?.text = "Filter Lists"
+            cell.accessoryType = .disclosureIndicator
+        case .wallpaper:
+            cell.textLabel?.text = "Wallpaper"
+            cell.accessoryType = .disclosureIndicator
         case .about:
             cell.textLabel?.text = L.t("about")
             cell.textLabel?.textColor = .secondaryLabel
@@ -78,6 +85,13 @@ final class SettingsViewController: UITableViewController {
             clearCache()
         case .language:
             chooseLanguage()
+        case .filterLists:
+            navigationController?.pushViewController(FilterListsViewController(), animated: true)
+        case .wallpaper:
+            let picker = WallpaperPickerViewController()
+            let navigation = UINavigationController(rootViewController: picker)
+            navigation.modalPresentationStyle = .pageSheet
+            present(navigation, animated: true)
         default:
             break
         }

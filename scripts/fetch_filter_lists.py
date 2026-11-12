@@ -1,14 +1,10 @@
-"""Downloads the real filter lists and converts them to Safari/WebKit content-blocker rules.
+"""Downloads the full filter-list ecosystem into Resources/filters for the in-app manager.
 
 Usage:
     python scripts/fetch_filter_lists.py
 
-Writes:
-    Resources/blocklist_full.json   (ad + tracker domains from EasyList / EasyPrivacy)
-
-Only the domain-based rules are converted: WebKit's WKContentRuleList works on
-domain matching, while the cosmetic/exception rules of the upstream lists are
-handled by Magdy's own cosmetic rule.
+The app compiles the selected lists into WKContentRuleLists at runtime, so the
+raw ABP syntax (including path rules) is shipped rather than a pre-converted subset.
 """
 
 import json
@@ -16,85 +12,63 @@ import os
 import re
 import urllib.request
 
-SOURCES = {
-    "ads": "https://easylist.to/easylist/easylist.txt",
-    "trackers": "https://easylist.to/easylist/easyprivacy.txt",
+LISTS = {
+    "easylist": "https://easylist.to/easylist/easylist.txt",
+    "easyprivacy": "https://easylist.to/easylist/easyprivacy.txt",
+    "easylist_germany": "https://easylist.to/easylistgermany/easylistgermany.txt",
+    "fanboy_annoyance": "https://secure.fanboy.co.nz/fanboy-annoyance.txt",
+    "fanboy_social": "https://secure.fanboy.co.nz/fanboy-social.txt",
+    "peter_lowe": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext",
 }
 
 DOMAIN_RE = re.compile(r"^(?:\|\|)?([a-z0-9][a-z0-9.\-]*\.[a-z]{2,})(?:\^)?$")
-HEADER_RE = re.compile(r"^\[!|^!|^\[", re.IGNORECASE)
 
 
 def fetch(url: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": "MagdyBrowser/1.0"})
-    with urllib.request.urlopen(request, timeout=60) as response:
+    with urllib.request.urlopen(request, timeout=90) as response:
         return response.read().decode("utf-8", errors="ignore")
-
-
-def domains_from(text: str) -> set:
-    found = set()
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("!") or line.startswith("["):
-            continue
-        if "/" in line:  # path rules are out of scope for domain matching
-            continue
-        match = DOMAIN_RE.match(line)
-        if not match:
-            continue
-        domain = match.group(1)
-        if domain.count(".") >= 1 and len(domain) <= 100:
-            found.add(domain)
-    return found
-
-
-def build(domains):
-    rules = []
-    for domain in sorted(domains):
-        rules.append(
-            {
-                "trigger": {"url-filter": ".*", "if-domain": ["*" + domain]},
-                "action": {"type": "block"},
-            }
-        )
-    rules.append(
-        {
-            "trigger": {"url-filter": ".*"},
-            "action": {
-                "type": "css-display-none",
-                "selector": ".ad, .ads, .ad-banner, .adslot, .adsbygoogle, "
-                ".advertisement, .banner-ad, .sponsored, .promo-banner, "
-                "[id^='google_ads_'], [id^='div-gpt-ad'], .taboola, .outbrain",
-            },
-        }
-    )
-    return rules
 
 
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     resources = os.path.join(root, "Resources")
+    filters = os.path.join(resources, "filters")
+    os.makedirs(filters, exist_ok=True)
 
-    all_domains = set()
-    for name, url in SOURCES.items():
+    manifest = []
+    for name, url in LISTS.items():
         try:
             text = fetch(url)
-        except Exception as error:  # network may be unavailable
-            print(f"! could not fetch {url}: {error}")
+        except Exception as error:
+            print(f"! {name}: {error}")
             continue
-        domains = domains_from(text)
-        print(f"{url}: {len(domains)} domains")
-        all_domains |= domains
+        path = os.path.join(filters, f"{name}.txt")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
 
-    if not all_domains:
-        print("! no domains fetched, keeping existing curated lists")
-        return
+        domains = set()
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith(("!", "[")) or "/" in stripped:
+                continue
+            match = DOMAIN_RE.match(stripped)
+            if match:
+                domains.add(match.group(1))
 
-    rules = build(all_domains)
-    path = os.path.join(resources, "blocklist_full.json")
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(rules, handle, separators=(",", ":"))
-    print(f"wrote {path} ({os.path.getsize(path) // 1024} KB, {len(rules)} rules)")
+        manifest.append({
+            "id": name,
+            "title": name.replace("_", " ").title(),
+            "source": url,
+            "bytes": os.path.getsize(path),
+            "domains": len(domains),
+        })
+        print(f"{name}: {os.path.getsize(path) // 1024} KB, {len(domains)} domains")
+
+    manifest_path = os.path.join(filters, "manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2)
+    print(f"wrote {manifest_path}")
 
 
 if __name__ == "__main__":

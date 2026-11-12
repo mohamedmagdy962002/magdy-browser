@@ -27,6 +27,15 @@ targets:
       - path: Resources
         excludes:
           - Info.plist
+          - Wallpapers
+          - filters
+          - Fonts
+      - path: Resources/Wallpapers
+        type: folder
+      - path: Resources/filters
+        type: folder
+      - path: Resources/Fonts
+        type: folder
     dependencies:
       - target: MagdyWidget
         embed: true
