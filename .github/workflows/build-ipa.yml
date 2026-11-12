@@ -1,0 +1,51 @@
+name: Build IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    # macOS runner: the only place an iOS app can actually be compiled.
+    # Free plan: public repos unlimited, private repos get a small monthly minute allowance.
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild \
+            -project MagdyBrowser.xcodeproj \
+            -scheme MagdyBrowser \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package IPA
+        run: |
+          python3 scripts/make_unsigned_ipa.py \
+            build/DerivedData/Build/Products/Release-iphoneos/MagdyBrowser.app \
+            build/MagdyBrowser-unsigned.ipa
+          unzip -l build/MagdyBrowser-unsigned.ipa | head -30
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MagdyBrowser-ipa
+          path: build/MagdyBrowser-unsigned.ipa
+          if-no-files-found: error
