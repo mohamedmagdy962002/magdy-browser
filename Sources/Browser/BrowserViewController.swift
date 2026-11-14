@@ -216,7 +216,16 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let closeAll = UIAction(title: L.t("close_all_tabs"), image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in
             self?.closeAllTabs()
         }
-        return UIMenu(children: [privateTab, favorite, media, downloader, reader, find, closeAll])
+        let desktopSite = UIAction(title: "Desktop Site", image: UIImage(systemName: "desktopcomputer")) { [weak self] _ in
+            self?.toggleDesktopSite()
+        }
+        let inSafari = UIAction(title: "Open in Safari", image: UIImage(systemName: "safari")) { [weak self] _ in
+            self?.openInSafari()
+        }
+        let copy = UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in
+            self?.copyLink()
+        }
+        return UIMenu(children: [privateTab, favorite, media, downloader, reader, find, desktopSite, inSafari, copy, closeAll])
     }
 
     // MARK: - Video downloader
@@ -228,6 +237,34 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             sheet.detents = [.medium(), .large()]
         }
         present(navigation, animated: true)
+    }
+
+    // MARK: - Video player
+
+    private func presentVideoPlayer(url: URL, title: String) {
+        let player = VideoPlayerController(url: url, title: title.isEmpty ? url.host ?? "Video" : title)
+        present(player, animated: true)
+    }
+
+    // MARK: - Page tools
+
+    private func toggleDesktopSite() {
+        guard let tab = activeTab, let url = tab.webView.url else { return }
+        let desktop = tab.webView.customUserAgent?.contains("Macintosh") != true
+        tab.webView.customUserAgent = desktop
+            ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+            : "MagdyBrowser/1.0"
+        tab.webView.load(URLRequest(url: url))
+    }
+
+    private func openInSafari() {
+        guard let url = activeTab?.webView.url else { return }
+        UIApplication.shared.open(url)
+    }
+
+    private func copyLink() {
+        guard let url = activeTab?.webView.url else { return }
+        UIPasteboard.general.string = url.absoluteString
     }
 
     /// Handles a URL that arrived from the share sheet or another app.
@@ -308,6 +345,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         tab.onProgress = { [weak self] tab, progress in
             self?.progressBar.isHidden = progress >= 1 || progress == 0
             self?.progressBar.setProgress(Float(progress), animated: true)
+        }
+        tab.onVideoTapped = { [weak self] url, title in
+            self?.presentVideoPlayer(url: url, title: title)
         }
 
         webContainer.addSubview(tab.webView)

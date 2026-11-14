@@ -12,6 +12,8 @@ final class BrowserTab: NSObject {
     var onTitleChange: ((BrowserTab) -> Void)?
     var onLoadingChange: ((BrowserTab, Bool) -> Void)?
     var onProgress: ((BrowserTab, Double) -> Void)?
+    /// Fired when the user taps a video element on the page.
+    var onVideoTapped: ((URL, String) -> Void)?
 
     private var progressObservation: NSKeyValueObservation?
     private var blockerObserver: UUID?
@@ -51,6 +53,29 @@ final class BrowserTab: NSObject {
 
         ContentBlocker.shared.apply(to: configuration.userContentController)
         appliedRuleListIDs = Set(ContentBlocker.shared.ruleLists.map(\.identifier))
+
+        // Tapping a video on the page opens the in-app player.
+        let videoHook = """
+        (function () {
+          if (window.__magdyVideoHook) return;
+          window.__magdyVideoHook = true;
+          document.addEventListener('click', function (event) {
+            const target = event.target;
+            const video = target && target.tagName === 'VIDEO' ? target : null;
+            if (!video) return;
+            const src = video.currentSrc || video.src || '';
+            if (!src) return;
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.magdyVideo) {
+              window.webkit.messageHandlers.magdyVideo.postMessage({
+                url: src, title: document.title || ''
+              });
+            }
+          }, true);
+        })();
+        """
+        let source = WKUserScript(source: videoHook, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
+        configuration.userContentController.addUserScript(source)
+        configuration.userContentController.add(WeakScriptMessageProxy(target: self), name: "magdyVideo")
 
         // Newly compiled filter lists are attached to this tab as they arrive.
         blockerObserver = ContentBlocker.shared.observe { [weak self] in
@@ -175,5 +200,23 @@ extension BrowserTab: WKUIDelegate {
         completionHandler: @escaping (Bool) -> Void
     ) {
         completionHandler(true)
+    }
+}
+
+// MARK: - Script messages
+
+extension BrowserTab: WKScriptMessageHandler {
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        guard message.name == "magdyVideo",
+              let payload = message.body as? [String: Any],
+              let urlString = payload["url"] as? String,
+              let url = URL(string: urlString) else { return }
+        let title = payload["title"] as? String ?? ""
+        DispatchQueue.main.async { [weak self] in
+            self?.onVideoTapped?(url, title)
+        }
     }
 }
