@@ -8,7 +8,7 @@ import UIKit
 final class VideoPlayerController: UIViewController {
 
     private let url: URL
-    private let title: String
+    private let pageTitle: String
 
     private let player = AVPlayer()
     private var playerLayer: AVPlayerLayer!
@@ -33,7 +33,7 @@ final class VideoPlayerController: UIViewController {
 
     init(url: URL, title: String) {
         self.url = url
-        self.title = title
+        self.pageTitle = title
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
     }
@@ -66,7 +66,7 @@ final class VideoPlayerController: UIViewController {
         playerLayer.videoGravity = .resizeAspect
         container.layer.addSublayer(playerLayer)
 
-        titleLabel.text = title
+        titleLabel.text = pageTitle
         titleLabel.textColor = .white
         titleLabel.font = Theme.headline(17, weight: .semibold)
         titleLabel.numberOfLines = 2
