@@ -5,14 +5,15 @@ final class SettingsViewController: UITableViewController {
 
     private enum Row {
         case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache
-        case filterLists, wallpaper, language, about
+        case filterLists, customFilterLists, wallpaper, language, about
+        case appLock, nightMode, searchEngine, vault, readingList, blockStats
     }
 
     private let sections: [(title: String, rows: [Row])] = [
-        (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking]),
-        (L.t("history"), [.defaultPrivate, .clearData]),
-        (L.t("clear_cache"), [.clearCache]),
-        (L.t("language"), [.language, .filterLists, .wallpaper]),
+        (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
+        ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault]),
+        ("Appearance", [.nightMode, .wallpaper]),
+        (L.t("language"), [.language, .searchEngine, .readingList]),
         (L.t("about"), [.about])
     ]
 
@@ -66,9 +67,32 @@ final class SettingsViewController: UITableViewController {
         case .filterLists:
             cell.textLabel?.text = "Filter Lists"
             cell.accessoryType = .disclosureIndicator
+        case .customFilterLists:
+            cell.textLabel?.text = "Custom Filter Lists"
+            cell.accessoryType = .disclosureIndicator
         case .wallpaper:
             cell.textLabel?.text = "Wallpaper"
             cell.accessoryType = .disclosureIndicator
+        case .appLock:
+            cell.textLabel?.text = "App Lock (Face ID)"
+            cell.accessoryView = makeSwitch(key: AppLock.enabledKey, default: false)
+        case .nightMode:
+            cell.textLabel?.text = "Night Mode"
+            cell.accessoryView = makeSwitch(key: "magdy.nightMode", default: false)
+        case .searchEngine:
+            cell.textLabel?.text = "Search Engine"
+            cell.accessoryType = .disclosureIndicator
+            cell.detailTextLabel?.text = SearchEngine.selected.name
+        case .vault:
+            cell.textLabel?.text = "Private Vault"
+            cell.accessoryType = .disclosureIndicator
+        case .readingList:
+            cell.textLabel?.text = "Reading List"
+            cell.accessoryType = .disclosureIndicator
+        case .blockStats:
+            cell.textLabel?.text = "Ads blocked"
+            cell.detailTextLabel?.text = BlockStats.shared.total.formatted()
+            cell.accessoryType = .none
         case .about:
             cell.textLabel?.text = L.t("about")
             cell.textLabel?.textColor = .secondaryLabel
@@ -80,18 +104,31 @@ final class SettingsViewController: UITableViewController {
         tableView.deselectRow(at: indexPath, animated: true)
         switch sections[indexPath.section].rows[indexPath.row] {
         case .clearData:
-            clearBrowsingData()
+            clearBrowsingDataByRange()
         case .clearCache:
             clearCache()
         case .language:
             chooseLanguage()
         case .filterLists:
             navigationController?.pushViewController(FilterListsViewController(), animated: true)
+        case .customFilterLists:
+            navigationController?.pushViewController(CustomFilterListsViewController(), animated: true)
         case .wallpaper:
             let picker = WallpaperPickerViewController()
             let navigation = UINavigationController(rootViewController: picker)
             navigation.modalPresentationStyle = .pageSheet
             present(navigation, animated: true)
+        case .searchEngine:
+            chooseSearchEngine()
+        case .vault:
+            let vault = VaultViewController()
+            let navigation = UINavigationController(rootViewController: vault)
+            navigation.modalPresentationStyle = .pageSheet
+            AppLock.gate(viewController: self, reason: "Unlock your Private Vault") { [weak self] in
+                self?.present(navigation, animated: true)
+            }
+        case .readingList:
+            navigationController?.pushViewController(ReadingListViewController(), animated: true)
         default:
             break
         }
@@ -110,6 +147,9 @@ final class SettingsViewController: UITableViewController {
     @objc private func switchChanged(_ sender: UISwitch) {
         guard let key = sender.accessibilityIdentifier else { return }
         UserDefaults.standard.set(sender.isOn, forKey: key)
+        if key == "magdy.nightMode" {
+            NotificationCenter.default.post(name: .magdyNightModeChanged, object: sender.isOn)
+        }
         guard key == UserDefaultsKey.blockAds || key == UserDefaultsKey.blockTrackers else { return }
 
         // Filter lists are compiled into the web view configuration, so blocking
@@ -139,7 +179,7 @@ final class SettingsViewController: UITableViewController {
         present(sheet, animated: true)
     }
 
-    private func clearBrowsingData() {
+    private func clearBrowsingData(since date: Date) {
         let types: Set<String> = [
             WKWebsiteDataTypeDiskCache,
             WKWebsiteDataTypeMemoryCache,
@@ -148,10 +188,27 @@ final class SettingsViewController: UITableViewController {
             WKWebsiteDataTypeLocalStorage,
             WKWebsiteDataTypeIndexedDBDatabases
         ]
-        WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: .distantPast) { [weak self] in
+        WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: date) { [weak self] in
             HistoryStore.shared.clear()
             self?.showAlert(title: L.t("done"), message: "Cache, cookies, site data and history cleared.")
         }
+    }
+
+    private func clearBrowsingDataByRange() {
+        let sheet = UIAlertController(title: "Clear Browsing Data", message: nil, preferredStyle: .actionSheet)
+        let ranges: [(String, TimeInterval)] = [
+            ("Last hour", 3600),
+            ("Last 24 hours", 86400),
+            ("Last 7 days", 7 * 86400),
+            ("All time", .distantPast.timeIntervalSinceNow)
+        ]
+        for (title, interval) in ranges {
+            sheet.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                self?.clearBrowsingData(since: Date().addingTimeInterval(interval))
+            })
+        }
+        sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        present(sheet, animated: true)
     }
 
     private func clearCache() {

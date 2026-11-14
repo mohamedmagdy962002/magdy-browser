@@ -1,4 +1,5 @@
 import UIKit
+import AVFoundation
 import WebKit
 
 /// Extracts the readable article text from a page and renders it without clutter.
@@ -74,10 +75,12 @@ enum ReaderMode {
     }
 }
 
-/// Full-screen reader view.
+/// Full-screen reader view with read-aloud and save-to-reading-list.
 final class ReaderViewController: UIViewController {
     private let article: ReaderMode.Article
     private let textView = UITextView()
+    private let synthesizer = AVSpeechSynthesizer()
+    private var isSpeaking = false
 
     init(article: ReaderMode.Article) {
         self.article = article
@@ -90,9 +93,15 @@ final class ReaderViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .done, target: self, action: #selector(closeTapped)
+        let speak = UIBarButtonItem(
+            image: UIImage(systemName: "speaker.wave.2"), style: .plain, target: self, action: #selector(toggleSpeaking)
         )
+        let save = UIBarButtonItem(
+            image: UIImage(systemName: "book"), style: .plain, target: self, action: #selector(saveToReadingList)
+        )
+        let done = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(closeTapped))
+        navigationItem.rightBarButtonItems = [done, save, speak]
+        synthesizer.delegate = self
 
         textView.isEditable = false
         textView.adjustsFontForContentSizeCategory = true
@@ -143,6 +152,36 @@ final class ReaderViewController: UIViewController {
     }
 
     @objc private func closeTapped() {
+        synthesizer.stopSpeaking(at: .immediate)
         dismiss(animated: true)
+    }
+
+    @objc private func toggleSpeaking() {
+        if synthesizer.isSpeaking {
+            synthesizer.stopSpeaking(at: .immediate)
+            isSpeaking = false
+            navigationItem.rightBarButtonItems?.first?.image = UIImage(systemName: "speaker.wave.2")
+            return
+        }
+        let text = article.paragraphs.joined(separator: ". ")
+        let utterance = AVSpeechUtterance(string: article.title + ". " + text)
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+        synthesizer.speak(utterance)
+        isSpeaking = true
+        navigationItem.rightBarButtonItems?.first?.image = UIImage(systemName: "speaker.slash")
+    }
+
+    @objc private func saveToReadingList() {
+        ReadingListStore.shared.add(title: article.title, url: "", paragraphs: article.paragraphs)
+        let alert = UIAlertController(title: nil, message: "Saved to Reading List", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
+        present(alert, animated: true)
+    }
+}
+
+extension ReaderViewController: AVSpeechSynthesizerDelegate {
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        isSpeaking = false
+        navigationItem.rightBarButtonItems?.first?.image = UIImage(systemName: "speaker.wave.2")
     }
 }

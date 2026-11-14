@@ -20,6 +20,11 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private var openURLObserver: NSObjectProtocol?
     private var downloadURLObserver: NSObjectProtocol?
+    private var nightModeObserver: NSObjectProtocol?
+    private var closedTabs: [TabGridViewController.ClosedTab] = []
+    private let suggestionsTable = UITableView(frame: .zero, style: .plain)
+    private var suggestions: [String] = []
+    private var lastToolbarY: CGFloat = 0
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -40,6 +45,13 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             guard let self, let url = note.object as? URL else { return }
             self.handleIncomingDownload(url)
         }
+
+        nightModeObserver = NotificationCenter.default.addObserver(
+            forName: .magdyNightModeChanged, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self, let enabled = note.object as? Bool, let tab = self.activeTab else { return }
+            tab.setNightMode(enabled)
+        }
     }
 
     deinit {
@@ -48,6 +60,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         }
         if let downloadURLObserver {
             NotificationCenter.default.removeObserver(downloadURLObserver)
+        }
+        if let nightModeObserver {
+            NotificationCenter.default.removeObserver(nightModeObserver)
         }
     }
 
@@ -156,6 +171,19 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         toolbarChrome.addSubview(toolbar)
         view.addSubview(downloadFAB)
 
+        // Omnibox suggestions overlay.
+        suggestionsTable.backgroundColor = Theme.card
+        suggestionsTable.layer.cornerRadius = Theme.corner
+        suggestionsTable.layer.cornerCurve = .continuous
+        suggestionsTable.separatorStyle = .none
+        suggestionsTable.register(UITableViewCell.self, forCellReuseIdentifier: "suggestion")
+        suggestionsTable.dataSource = self
+        suggestionsTable.delegate = self
+        suggestionsTable.isHidden = true
+        suggestionsTable.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(suggestionsTable)
+        view.bringSubviewToFront(suggestionsTable)
+
         Theme.fabShadow(downloadFAB)
 
         NSLayoutConstraint.activate([
@@ -190,8 +218,16 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             webContainer.topAnchor.constraint(equalTo: progressBar.bottomAnchor),
             webContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webContainer.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor)
+            webContainer.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor),
+
+            suggestionsTable.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 8),
+            suggestionsTable.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            suggestionsTable.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            suggestionsTable.heightAnchor.constraint(lessThanOrEqualToConstant: 260)
         ])
+
+        // Swipe on the toolbar switches tabs.
+        toolbarChrome.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(toolbarSwiped(_:))))
     }
 
     private func makeMenu() -> UIMenu {
@@ -225,7 +261,41 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let copy = UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in
             self?.copyLink()
         }
-        return UIMenu(children: [privateTab, favorite, media, downloader, reader, find, desktopSite, inSafari, copy, closeAll])
+        let tabsGrid = UIAction(title: "All Tabs", image: UIImage(systemName: "square.grid.2x2")) { [weak self] _ in
+            self?.openTabGrid()
+        }
+        let reopen = UIAction(title: "Reopen Closed Tab", image: UIImage(systemName: "arrow.uturn.left")) { [weak self] _ in
+            self?.reopenClosedTab()
+        }
+        let savePDF = UIAction(title: "Export Page as PDF", image: UIImage(systemName: "doc.richtext")) { [weak self] _ in
+            self?.exportPDF(fullPage: false)
+        }
+        let nightMode = UIAction(
+            title: activeTab?.nightModeEnabled == true ? "Night Mode Off" : "Night Mode On",
+            image: UIImage(systemName: "moon")
+        ) { [weak self] _ in
+            self?.toggleNightMode()
+        }
+        let qr = UIAction(title: "Scan QR Code", image: UIImage(systemName: "qrcode.viewfinder")) { [weak self] _ in
+            self?.openQRScanner()
+        }
+        let voice = UIAction(title: "Voice Search", image: UIImage(systemName: "mic")) { [weak self] _ in
+            self?.openVoiceSearch()
+        }
+        let readingList = UIAction(title: "Add to Reading List", image: UIImage(systemName: "book")) { [weak self] _ in
+            self?.saveToReadingList()
+        }
+        let translate = UIAction(title: "Translate Page", image: UIImage(systemName: "character.bubble")) { [weak self] _ in
+            self?.translatePage()
+        }
+        let lockNow = UIAction(title: "Lock Now", image: UIImage(systemName: "lock")) { [weak self] _ in
+            self?.lockNow()
+        }
+        return UIMenu(children: [
+            tabsGrid, reopen, privateTab, favorite, readingList, media, downloader,
+            reader, find, desktopSite, inSafari, copy, savePDF, nightMode, translate,
+            qr, voice, lockNow, closeAll
+        ])
     }
 
     // MARK: - Video downloader
@@ -350,6 +420,14 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             self?.presentVideoPlayer(url: url, title: title)
         }
 
+        // Pull-to-refresh.
+        let refresh = UIRefreshControl()
+        refresh.addTarget(self, action: #selector(pullToRefresh), for: .valueChanged)
+        tab.webView.scrollView.refreshControl = refresh
+
+        // Hide the toolbar while the user scrolls down, bring it back scrolling up.
+        tab.webView.scrollView.delegate = self
+
         webContainer.addSubview(tab.webView)
         tab.webView.frame = webContainer.bounds
         tab.webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -370,6 +448,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     }
 
     private func closeAllTabs() {
+        for tab in store.tabs {
+            closedTabs.append(TabGridViewController.ClosedTab(url: tab.webView.url, isPrivate: tab.isPrivate))
+        }
         store.closeAll()
         openNewTab(privateMode: false)
     }
@@ -399,20 +480,50 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         openNewTab(privateMode: UserDefaultsKey.bool(UserDefaultsKey.defaultPrivate, default: false))
     }
 
+    @objc private func pullToRefresh() {
+        guard let tab = activeTab else { return }
+        tab.reload()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.activeTab?.webView.scrollView.refreshControl?.endRefreshing()
+        }
+    }
+
+    @objc private func toolbarSwiped(_ gesture: UIPanGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        let translation = gesture.translation(in: view).x
+        gesture.setTranslation(.zero, in: view)
+        guard abs(translation) > 60,
+              let tab = activeTab,
+              let index = store.tabs.firstIndex(where: { $0 === tab }) else { return }
+        let next = translation < 0 ? min(index + 1, store.tabs.count - 1) : max(index - 1, 0)
+        if next != index {
+            activate(store.tabs[next])
+        }
+    }
+
     @objc private func tabsTapped() {
-        let sheet = UIAlertController(title: "Tabs", message: nil, preferredStyle: .actionSheet)
-        for (index, tab) in store.tabs.enumerated() {
-            let label = tab.title.isEmpty ? "Tab \(index + 1)" : tab.title
-            sheet.addAction(UIAlertAction(title: label, style: .default) { [weak self] _ in
-                self?.activate(tab)
-            })
+        openTabGrid()
+    }
+
+    private func openTabGrid() {
+        let grid = TabGridViewController(
+            store: store,
+            onActivate: { [weak self] tab in self?.activate(tab) },
+            onNewTab: { [weak self] privateMode in self?.openNewTab(privateMode: privateMode) },
+            onReopen: { [weak self] closed in self?.closedTabs.append(closed) }
+        )
+        let navigation = UINavigationController(rootViewController: grid)
+        navigation.modalPresentationStyle = .pageSheet
+        present(navigation, animated: true)
+    }
+
+    private func reopenClosedTab() {
+        guard let last = closedTabs.popLast() else { return }
+        let tab = store.newTab(privateMode: last.isPrivate)
+        activate(tab)
+        if let url = last.url {
+            tab.load(url: url)
         }
-        sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-        if let popover = sheet.popoverPresentationController {
-            popover.sourceView = tabButton
-            popover.sourceRect = tabButton.bounds
-        }
-        present(sheet, animated: true)
     }
 
     private func addCurrentPageToFavorites() {
@@ -497,6 +608,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 extension BrowserViewController {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
+        suggestionsTable.isHidden = true
         guard let tab = activeTab else { return true }
         let input = textField.text ?? ""
         if let url = input.magdyNavigable {
@@ -509,5 +621,169 @@ extension BrowserViewController {
 
     func textFieldDidBeginEditing(_ textField: UITextField) {
         textField.text = ""
+    }
+
+    func textFieldDidEndEditing(_ textField: UITextField) {
+        suggestionsTable.isHidden = true
+    }
+
+    func textField(
+        _ textField: UITextField,
+        shouldChangeCharactersIn range: NSRange,
+        replacementString string: String
+    ) -> Bool {
+        guard let current = (textField.text as NSString?)?.replacingCharacters(in: range, with: string) else { return true }
+        let query = current.trimmingCharacters(in: .whitespaces)
+        guard query.count >= 2, !current.contains(".") && !current.contains(" ") else {
+            suggestionsTable.isHidden = true
+            return true
+        }
+        SearchEngine.suggestions(for: query) { [weak self] results in
+            guard let self, textField.isFirstResponder else { return }
+            self.suggestions = results
+            self.suggestionsTable.reloadData()
+            self.suggestionsTable.isHidden = results.isEmpty
+        }
+        return true
+    }
+}
+
+// MARK: - Suggestions
+
+extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        suggestions.count
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "suggestion", for: indexPath)
+        var content = cell.defaultContentConfiguration()
+        content.image = UIImage(systemName: "magnifyingglass")
+        content.text = suggestions[indexPath.row]
+        content.textProperties.font = Theme.body(15)
+        cell.contentConfiguration = content
+        cell.backgroundColor = .clear
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let query = suggestions[indexPath.row]
+        addressField.text = query
+        addressField.resignFirstResponder()
+        suggestionsTable.isHidden = true
+        guard let tab = activeTab, let url = SearchEngine.selected.searchURL(for: query) else { return }
+        tab.load(url: url)
+    }
+}
+
+// MARK: - Scroll behaviour
+
+extension BrowserViewController: UIScrollViewDelegate {
+    func scrollViewWillEndDragging(
+        _ scrollView: UIScrollView,
+        withVelocity velocity: CGPoint,
+        targetContentOffset: UnsafeMutablePointer<CGPoint>
+    ) {
+        guard scrollView === activeTab?.webView.scrollView else { return }
+        let chromeHeight: CGFloat = 60
+        let collapsed = velocity.y > 0.5
+        let expanded = velocity.y < -0.5
+        var transform = CGAffineTransform.identity
+        if collapsed {
+            transform = CGAffineTransform(translationX: 0, y: chromeHeight + 20)
+        } else if expanded {
+            transform = .identity
+        }
+        UIView.animate(withDuration: 0.25) {
+            self.omnibox.transform = transform
+            self.progressBar.transform = transform
+        }
+    }
+}
+
+// MARK: - Page tools & integrations
+
+extension BrowserViewController {
+    private func exportPDF(fullPage: Bool) {
+        guard let tab = activeTab, tab.webView.url != nil else { return }
+        tab.exportPDF(fullPage: fullPage) { [weak self] url in
+            guard let self, let url else {
+                let alert = UIAlertController(title: "Export failed", message: nil, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
+                self?.present(alert, animated: true)
+                return
+            }
+            let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            sheet.popoverPresentationController?.sourceView = self.view
+            self.present(sheet, animated: true)
+        }
+    }
+
+    private func toggleNightMode() {
+        guard let tab = activeTab else { return }
+        tab.setNightMode(!tab.nightModeEnabled)
+    }
+
+    private func openQRScanner() {
+        let scanner = QRScannerViewController()
+        scanner.onURLFound = { [weak self] url in
+            self?.open(url: url, privateMode: false)
+        }
+        let navigation = UINavigationController(rootViewController: scanner)
+        navigation.modalPresentationStyle = .pageSheet
+        present(navigation, animated: true)
+    }
+
+    private func openVoiceSearch() {
+        let search = VoiceSearchViewController()
+        search.onText = { [weak self] text in
+            guard let self, let url = SearchEngine.selected.searchURL(for: text) else { return }
+            self.open(url: url, privateMode: false)
+        }
+        let navigation = UINavigationController(rootViewController: search)
+        navigation.modalPresentationStyle = .pageSheet
+        present(navigation, animated: true)
+    }
+
+    private func saveToReadingList() {
+        guard let tab = activeTab else { return }
+        ReaderMode.extract(from: tab.webView) { result in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let message: String
+                switch result {
+                case .success(let article):
+                    ReadingListStore.shared.add(
+                        title: article.title,
+                        url: tab.webView.url?.absoluteString ?? "",
+                        paragraphs: article.paragraphs
+                    )
+                    message = "Saved to Reading List"
+                case .failure:
+                    message = "No readable content found on this page"
+                }
+                let alert = UIAlertController(title: nil, message: message, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
+                self.present(alert, animated: true)
+            }
+        }
+    }
+
+    private func translatePage() {
+        guard let tab = activeTab, let url = tab.webView.url else { return }
+        let language = L.resolvedLanguage.isEmpty ? "en" : L.resolvedLanguage
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+#"))
+        let encoded = url.absoluteString.addingPercentEncoding(withAllowedCharacters: allowed) ?? url.absoluteString
+        guard let translateURL = URL(string: "https://translate.google.com/translate?sl=auto&tl=\(language)&u=\(encoded)") else { return }
+        tab.load(url: translateURL)
+    }
+
+    private func lockNow() {
+        let locked = LockedViewController()
+        locked.retry = { [weak locked] in
+            locked?.dismiss(animated: true)
+        }
+        locked.modalPresentationStyle = .overFullScreen
+        present(locked, animated: false)
     }
 }

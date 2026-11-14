@@ -4,7 +4,7 @@ import WebKit
 
 final class DownloadItem {
     enum State: String {
-        case queued, running, finished, failed, cancelled
+        case queued, running, paused, finished, failed, cancelled
     }
 
     let id = UUID()
@@ -17,6 +17,8 @@ final class DownloadItem {
     var errorMessage: String?
     var localURL: URL?
     var cancel: (() -> Void)?
+    var task: URLSessionDownloadTask?
+    var resumeData: Data?
 }
 
 /// Unlimited download queue: no count cap, no speed cap, no subscription gate.
@@ -75,6 +77,7 @@ final class DownloadManager: NSObject {
 
         let task = session.downloadTask(with: request)
         taskItems[task.taskIdentifier] = item
+        item.task = task
         item.cancel = { task.cancel() }
         insert(item)
         task.resume()
@@ -127,6 +130,32 @@ final class DownloadManager: NSObject {
         item.state = .cancelled
         stopPolling(item)
         notify()
+    }
+
+    /// Pauses a direct download, keeping resume data for `resume(item:)`.
+    func pause(_ item: DownloadItem) {
+        guard let task = item.task, item.state == .running else { return }
+        item.resumeData = nil
+        task.cancel(byProducingResumeData: { [weak self, weak item] data in
+            guard let self, let item else { return }
+            item.resumeData = data
+            item.state = .paused
+            self.stopPolling(item)
+            self.notify()
+        })
+    }
+
+    /// Resumes a paused download from its stored resume data.
+    func resume(_ item: DownloadItem) {
+        guard let data = item.resumeData, item.state == .paused else { return }
+        item.resumeData = nil
+        item.state = .running
+        let task = session.downloadTask(withResumeData: data)
+        taskItems[task.taskIdentifier] = item
+        item.task = task
+        item.cancel = { task.cancel() }
+        notify()
+        task.resume()
     }
 
     func remove(_ item: DownloadItem) {
@@ -288,8 +317,18 @@ extension DownloadManager: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         defer { taskItems.removeValue(forKey: task.taskIdentifier) }
         guard let error, let item = taskItems[task.taskIdentifier] else { return }
-        item.state = (error as NSError).code == NSURLErrorCancelled ? .cancelled : .failed
-        item.errorMessage = error.localizedDescription
+        if (error as NSError).code == NSURLErrorCancelled {
+            // Pause keeps the resume data so the download can continue later.
+            if item.resumeData != nil {
+                item.state = .paused
+            } else {
+                item.state = .cancelled
+                item.errorMessage = error.localizedDescription
+            }
+        } else {
+            item.state = .failed
+            item.errorMessage = error.localizedDescription
+        }
         notify()
     }
 }

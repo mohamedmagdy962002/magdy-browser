@@ -5,6 +5,8 @@ extension Notification.Name {
     static let magdyOpenURL = Notification.Name("com.magdy.openURL")
     /// Posted with a URL as the notification object to download a media URL.
     static let magdyDownloadURL = Notification.Name("com.magdy.downloadURL")
+    /// Posted with a Bool when night mode is toggled from settings.
+    static let magdyNightModeChanged = Notification.Name("com.magdy.nightModeChanged")
 }
 
 enum UserDefaultsKey {
@@ -35,8 +37,6 @@ extension String {
     }
 
     private func searchURL(for query: String) -> URL? {
-        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+#"))
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: allowed) ?? query
-        return URL(string: "https://duckduckgo.com/?q=\(encoded)")
+        SearchEngine.selected.searchURL(for: query)
     }
 }

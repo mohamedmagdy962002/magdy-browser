@@ -18,6 +18,8 @@ final class FilterListManager {
     private(set) var lists: [FilterList] = []
     private(set) var compiled: [String: WKContentRuleList] = [:]
     private var observers: [UUID: () -> Void] = [:]
+    /// Domains the active lists block — used by the ad-block counter audit.
+    private(set) var blockedDomains: Set<String> = []
 
     private let enabledKey = "magdy.filterLists.enabled"
 
@@ -81,10 +83,63 @@ final class FilterListManager {
 
         group.notify(queue: .main) { [weak self] in
             guard let self else { return }
+            self.collectBlockedDomains()
             let ruleLists = self.enabledIDs.compactMap { self.compiled[$0] }
             completion?(ruleLists)
             self.observers.values.forEach { $0() }
             self.onChange?()
+        }
+    }
+
+    /// Compiles a user-added list that was downloaded by CustomFilterListStore.
+    func compileCustomText(id: String, text: String) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let encoded = Self.encode(rules: Self.rules(from: text))
+            WKContentRuleListStore.default().compileContentRuleList(
+                forIdentifier: "MagdyFilter.\(id)",
+                encodedContentRuleList: encoded
+            ) { [weak self] ruleList, _ in
+                guard let self, let ruleList else { return }
+                self.compiled[id] = ruleList
+                self.collectBlockedDomains()
+                DispatchQueue.main.async {
+                    self.observers.values.forEach { $0() }
+                    self.onChange?()
+                }
+            }
+        }
+    }
+
+    /// Removes a compiled custom list and tells observers to refresh.
+    func removeRuleList(withIdentifier identifier: String) {
+        compiled.removeValue(forKey: identifier)
+        WKContentRuleListStore.default().removeContentRuleList(forIdentifier: "MagdyFilter.\(identifier)")
+        collectBlockedDomains()
+        observers.values.forEach { $0() }
+        onChange?()
+    }
+
+    private func collectBlockedDomains() {
+        var domains = Set<String>()
+        for id in enabledIDs {
+            guard let url = Bundle.main.url(forResource: id, withExtension: "txt", subdirectory: "filters"),
+                  let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            Self.appendDomains(from: text, into: &domains)
+        }
+        for entry in CustomFilterListStore.shared.entries {
+            guard let text = CustomFilterListStore.shared.storedText(for: entry) else { continue }
+            Self.appendDomains(from: text, into: &domains)
+        }
+        blockedDomains = domains
+    }
+
+    private static func appendDomains(from text: String, into set: inout Set<String>) {
+        for raw in text.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            guard !line.isEmpty, !line.hasPrefix("!"), !line.hasPrefix("[") else { continue }
+            if let domain = domain(in: line) {
+                set.insert(domain)
+            }
         }
     }
 

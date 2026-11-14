@@ -57,6 +57,8 @@ final class DownloadsViewController: UITableViewController {
             content.secondaryText = item.errorMessage ?? "Failed"
         case .cancelled:
             content.secondaryText = "Cancelled"
+        case .paused:
+            content.secondaryText = "Paused · \(Int(item.progress * 100))%"
         default:
             content.secondaryText = item.totalBytes > 0
                 ? "\(Int(item.progress * 100))% · \(ByteCountFormatter.string(fromByteCount: item.bytesWritten, countStyle: .file))"
@@ -92,7 +94,20 @@ final class DownloadsViewController: UITableViewController {
                 completion(true)
             }
             cancel.backgroundColor = .systemOrange
-            return UISwipeActionsConfiguration(actions: actions + [cancel])
+            let pause = UIContextualAction(style: .normal, title: "Pause") { _, _, completion in
+                self.manager.pause(item)
+                completion(true)
+            }
+            pause.backgroundColor = .systemBlue
+            return UISwipeActionsConfiguration(actions: [delete, cancel, pause])
+        }
+        if item.state == .paused {
+            let resume = UIContextualAction(style: .normal, title: "Resume") { _, _, completion in
+                self.manager.resume(item)
+                completion(true)
+            }
+            resume.backgroundColor = .systemGreen
+            return UISwipeActionsConfiguration(actions: [delete, resume])
         }
         return UISwipeActionsConfiguration(actions: actions)
     }

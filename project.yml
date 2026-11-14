@@ -67,6 +67,10 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        NSFaceIDUsageDescription: Magdy Browser uses Face ID to protect the app lock and your Private Vault.
+        NSCameraUsageDescription: Magdy Browser needs the camera for QR code scanning and websites that request it.
+        NSMicrophoneUsageDescription: Magdy Browser needs the microphone for voice search and websites that request it.
+        NSSpeechRecognitionUsageDescription: Magdy Browser uses speech recognition to turn your voice into search queries.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.magdy.browser

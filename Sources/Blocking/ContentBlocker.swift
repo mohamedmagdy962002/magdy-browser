@@ -38,6 +38,20 @@ final class ContentBlocker {
             }
             self.broadcast()
         }
+
+        // User-added custom lists compile asynchronously; sync them when the manager reports changes.
+        FilterListManager.shared.onChange = { [weak self] in
+            guard let self else { return }
+            for list in FilterListManager.shared.compiled.values
+            where !self.ruleLists.contains(where: { $0.identifier == list.identifier }) {
+                self.ruleLists.append(list)
+            }
+            self.ruleLists.removeAll { list in
+                list.identifier.hasPrefix("MagdyFilter.") &&
+                    !FilterListManager.shared.compiled.values.contains { $0.identifier == list.identifier }
+            }
+            self.broadcast()
+        }
     }
 
     func apply(to controller: WKUserContentController) {

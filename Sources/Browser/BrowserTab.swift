@@ -125,6 +125,10 @@ extension BrowserTab: WKNavigationDelegate {
         if !isPrivate, let url = webView.url {
             HistoryStore.shared.record(url: url, title: webView.title)
         }
+        if !isPrivate {
+            BlockStats.shared.audit(webView: webView)
+        }
+        applyNightModeIfNeeded()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -133,6 +137,25 @@ extension BrowserTab: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         onLoadingChange?(self, false)
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        let host = webView.url?.host ?? webView.backForwardList.currentItem?.url.host ?? "page"
+        webView.loadHTMLString(Self.errorPage(host: host), baseURL: nil)
+    }
+
+    private static func errorPage(host: String) -> String {
+        """
+        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>body{font-family:-apple-system,system-ui,sans-serif;background:#F5F5FB;color:#1C1C1E;
+        display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+        .card{background:#fff;border-radius:20px;padding:36px 30px;max-width:320px;text-align:center;
+        box-shadow:0 8px 24px rgba(28,28,30,.08)}
+        h1{font-size:20px;margin:0 0 8px}p{color:#8E8E93;font-size:14px;margin:0 0 20px}
+        button{background:#4A47F0;color:#fff;border:0;border-radius:14px;padding:12px 28px;
+        font-size:15px;font-weight:700}</style></head>
+        <body><div class="card"><h1>\(host) is unreachable</h1>
+        <p>Check the address or your connection.</p>
+        <button onclick="location.reload()">Try Again</button></div></body></html>
+        """
     }
 
     func webView(
@@ -200,6 +223,93 @@ extension BrowserTab: WKUIDelegate {
         completionHandler: @escaping (Bool) -> Void
     ) {
         completionHandler(true)
+    }
+
+    // Camera / mic / motion sensors: pages get the system prompt automatically.
+    func webView(
+        _ webView: WKWebView,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedBy frame: WKFrameInfo,
+        type: WKMediaCaptureType,
+        decisionHandler: @escaping (WKPermissionDecision) -> Void
+    ) {
+        decisionHandler(.prompt)
+    }
+
+    /// Long-press on a link: open in new tab, copy, download.
+    func webView(
+        _ webView: WKWebView,
+        contextMenuConfigurationFor elementInfo: WKContextMenuElementInfo,
+        completionHandler: @escaping (UIContextMenuConfiguration?) -> Void
+    ) {
+        guard let url = elementInfo.linkURL else {
+            completionHandler(nil)
+            return
+        }
+        let config = UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+            UIMenu(children: [
+                UIAction(title: "Open in New Tab", image: UIImage(systemName: "plus.square.on.square")) { _ in
+                    NotificationCenter.default.post(name: .magdyOpenURL, object: url)
+                },
+                UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { _ in
+                    UIPasteboard.general.string = url.absoluteString
+                },
+                UIAction(title: "Download", image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
+                    guard let self else { return }
+                    self.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                        DownloadManager.shared.start(url: url, referer: self.webView.url, cookies: cookies)
+                    }
+                }
+            ])
+        })
+        completionHandler(config)
+    }
+}
+
+// MARK: - Page tools
+
+extension BrowserTab {
+    /// Renders the whole page to a PDF (full-height when `fullPage`).
+    func exportPDF(fullPage: Bool, completion: @escaping (URL?) -> Void) {
+        let config = WKPDFConfiguration()
+        if fullPage {
+            config.rect = CGRect(x: 0, y: 0, width: webView.scrollView.contentSize.width, height: webView.scrollView.contentSize.height)
+        }
+        webView.createPDF(with: config) { result in
+            guard case .success(let data) = result else {
+                completion(nil)
+                return
+            }
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let url = docs.appendingPathComponent("\(webView.title ?? "page")-\(Int(Date().timeIntervalSince1970)).pdf")
+            try? data.write(to: url)
+            completion(url)
+        }
+    }
+
+    /// Injects or removes the night-mode CSS filter on the live page.
+    func setNightMode(_ enabled: Bool) {
+        let js = enabled
+            ? """
+            (function(){let s=document.getElementById('magdy-night');if(!s){s=document.createElement('style');
+            s.id='magdy-night';s.textContent='html{filter:invert(1) hue-rotate(180deg)!important;background:#000!important}'+
+            'img,video,iframe{filter:invert(1) hue-rotate(180deg)!important}';document.head.appendChild(s);}})()
+            """
+            : "(function(){let s=document.getElementById('magdy-night');if(s)s.remove();})()"
+        webView.evaluateJavaScript(js, completionHandler: nil)
+        nightModeEnabled = enabled
+    }
+
+    var nightModeEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "magdy.nightMode") }
+        set { UserDefaults.standard.set(newValue, forKey: "magdy.nightMode") }
+    }
+
+    /// Applies night mode to a freshly loaded page if the toggle is on.
+    func applyNightModeIfNeeded() {
+        if nightModeEnabled {
+            setNightMode(true)
+        }
     }
 }
 

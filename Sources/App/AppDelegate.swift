@@ -18,6 +18,21 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         window.rootViewController = RootViewController()
         window.makeKeyAndVisible()
         self.window = window
+
+        // App lock on launch.
+        if AppLock.isEnabled {
+            AppLock.authenticate(reason: "Unlock Magdy Browser") { success in
+                if !success {
+                    let locked = LockedViewController()
+                    locked.retry = {
+                        locked.dismiss(animated: false)
+                        AppLock.authenticate(reason: "Unlock Magdy Browser") { _ in }
+                    }
+                    locked.modalPresentationStyle = .overFullScreen
+                    window.rootViewController?.present(locked, animated: false)
+                }
+            }
+        }
         return true
     }
 
@@ -42,7 +57,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             return true
         }
         if let search, !search.isEmpty {
-            let destination = URL(string: "https://duckduckgo.com/?q=\(search)")
+            let destination = SearchEngine.selected.searchURL(for: search)
             if let destination {
                 NotificationCenter.default.post(name: .magdyOpenURL, object: destination)
                 return true
