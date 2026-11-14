@@ -122,7 +122,7 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
 
     private func openPhotoPicker() {
         var config = PHPickerConfiguration()
-        config.filter = [.images, .videos]
+        config.filter = PHPickerFilter.any(of: [.images, .videos])
         config.selectionLimit = 0
         let picker = PHPickerViewController(configuration: config)
         picker.delegate = self

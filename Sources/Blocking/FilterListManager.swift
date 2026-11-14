@@ -113,7 +113,7 @@ final class FilterListManager {
     /// Removes a compiled custom list and tells observers to refresh.
     func removeRuleList(withIdentifier identifier: String) {
         compiled.removeValue(forKey: identifier)
-        WKContentRuleListStore.default().removeContentRuleList(forIdentifier: "MagdyFilter.\(identifier)")
+        WKContentRuleListStore.default().removeContentRuleList(forIdentifier: "MagdyFilter.\(identifier)", completionHandler: nil)
         collectBlockedDomains()
         observers.values.forEach { $0() }
         onChange?()

@@ -7,6 +7,8 @@ extension Notification.Name {
     static let magdyDownloadURL = Notification.Name("com.magdy.downloadURL")
     /// Posted with a Bool when night mode is toggled from settings.
     static let magdyNightModeChanged = Notification.Name("com.magdy.nightModeChanged")
+    /// Posted when the theme setting changes.
+    static let magdyThemeChanged = Notification.Name("com.magdy.themeChanged")
 }
 
 enum UserDefaultsKey {

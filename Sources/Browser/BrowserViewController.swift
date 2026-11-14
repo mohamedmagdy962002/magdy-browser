@@ -31,6 +31,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         view.backgroundColor = .systemBackground
         buildUI()
         openNewTab(privateMode: UserDefaultsKey.bool(UserDefaultsKey.defaultPrivate, default: false))
+        offerSessionRestore()
 
         openURLObserver = NotificationCenter.default.addObserver(
             forName: .magdyOpenURL, object: nil, queue: .main
@@ -322,8 +323,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         guard let tab = activeTab, let url = tab.webView.url else { return }
         let desktop = tab.webView.customUserAgent?.contains("Macintosh") != true
         tab.webView.customUserAgent = desktop
-            ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+            ? BrowserTab.desktopUserAgent
             : "MagdyBrowser/1.0"
+        BrowserTab.rememberUserAgent(host: url.host ?? "", desktop: desktop)
         tab.webView.load(URLRequest(url: url))
     }
 
@@ -411,6 +413,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
                 UIImage(systemName: loading ? "xmark" : "arrow.clockwise"),
                 for: .normal
             )
+            if !loading {
+                self?.store.persist()
+            }
         }
         tab.onProgress = { [weak self] tab, progress in
             self?.progressBar.isHidden = progress >= 1 || progress == 0
@@ -524,6 +529,36 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         if let url = last.url {
             tab.load(url: url)
         }
+    }
+
+    /// Asks whether to reopen the tabs that were open when the app was killed.
+    private func offerSessionRestore() {
+        let saved = store.savedSession()
+        guard saved.count > 1 else { return }
+        let alert = UIAlertController(
+            title: "Restore Session?",
+            message: "Reopen the \(saved.count) tabs from your last session.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "Restore", style: .default) { [weak self] _ in
+            guard let self else { return }
+            var lastTab: BrowserTab?
+            for entry in saved {
+                guard let url = URL(string: entry.url) else { continue }
+                let tab = self.store.newTab(privateMode: false)
+                self.activate(tab)
+                tab.load(url: url)
+                lastTab = tab
+            }
+            if let lastTab {
+                self.activate(lastTab)
+            }
+            self.store.clearSavedSession()
+        })
+        alert.addAction(UIAlertAction(title: "New Session", style: .cancel) { [weak self] _ in
+            self?.store.clearSavedSession()
+        })
+        present(alert, animated: true)
     }
 
     private func addCurrentPageToFavorites() {

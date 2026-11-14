@@ -3,6 +3,13 @@ import UIKit
 final class RootViewController: UITabBarController {
     override func viewDidLoad() {
         super.viewDidLoad()
+        overrideUserInterfaceStyle = Theme.forcedStyle
+
+        NotificationCenter.default.addObserver(
+            forName: .magdyThemeChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.overrideUserInterfaceStyle = Theme.forcedStyle
+        }
 
         let browser = UINavigationController(rootViewController: BrowserViewController())
         browser.tabBarItem = UITabBarItem(

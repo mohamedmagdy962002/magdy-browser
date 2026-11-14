@@ -94,11 +94,11 @@ final class VoiceSearchViewController: UIViewController {
 
         task = speech?.recognitionTask(with: request) { [weak self] result, _ in
             guard let self else { return }
-            if let result, let text = result.bestTranscription.formattedString.isEmpty ? nil : result.bestTranscription.formattedString {
-                self.resultLabel.text = text
+            if let result, !result.bestTranscription.formattedString.isEmpty {
+                self.resultLabel.text = result.bestTranscription.formattedString
             }
-            if let result, result.isFinal, let text = result.bestTranscription.formattedString, !text.isEmpty {
-                self.onText?(text)
+            if let result, result.isFinal, !result.bestTranscription.formattedString.isEmpty {
+                self.onText?(result.bestTranscription.formattedString)
                 self.stopListening()
                 self.dismiss(animated: true)
             }

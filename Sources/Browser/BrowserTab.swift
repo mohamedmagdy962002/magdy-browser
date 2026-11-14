@@ -96,6 +96,7 @@ final class BrowserTab: NSObject {
     }
 
     func load(url: URL) {
+        applyRememberedUserAgent(for: url)
         webView.load(URLRequest(url: url))
     }
 
@@ -269,22 +270,31 @@ extension BrowserTab: WKUIDelegate {
 // MARK: - Page tools
 
 extension BrowserTab {
-    /// Renders the whole page to a PDF (full-height when `fullPage`).
+    /// Renders the page to a PDF via the system print pipeline (works on all iOS versions).
     func exportPDF(fullPage: Bool, completion: @escaping (URL?) -> Void) {
-        let config = WKPDFConfiguration()
-        if fullPage {
-            config.rect = CGRect(x: 0, y: 0, width: webView.scrollView.contentSize.width, height: webView.scrollView.contentSize.height)
-        }
-        webView.createPDF(with: config) { result in
-            guard case .success(let data) = result else {
-                completion(nil)
-                return
+        let printFormatter = webView.viewPrintFormatter()
+        let pageRenderer = UIPrintPageRenderer()
+        pageRenderer.addPrintFormatter(printFormatter, startingAtPageAt: 0)
+        let paper = CGRect(x: 0, y: 0, width: 595, height: 841)
+        pageRenderer.setValue(NSValue(cgRect: paper), forKey: "paperRect")
+        pageRenderer.setValue(NSValue(cgRect: paper.insetBy(dx: 24, dy: 24)), forKey: "printableRect")
+
+        let renderer = UIGraphicsPDFRenderer(bounds: paper)
+        let data = renderer.pdfData { context in
+            for page in 0..<pageRenderer.numberOfPages {
+                context.beginPage()
+                pageRenderer.drawPage(at: page, in: context.pdfContextBounds)
             }
-            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let url = docs.appendingPathComponent("\(webView.title ?? "page")-\(Int(Date().timeIntervalSince1970)).pdf")
-            try? data.write(to: url)
-            completion(url)
         }
+        guard !data.isEmpty else {
+            completion(nil)
+            return
+        }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let name = (webView.title ?? "page").replacingOccurrences(of: "/", with: "-")
+        let url = docs.appendingPathComponent("\(name)-\(Int(Date().timeIntervalSince1970)).pdf")
+        try? data.write(to: url)
+        completion(url)
     }
 
     /// Injects or removes the night-mode CSS filter on the live page.
@@ -310,6 +320,38 @@ extension BrowserTab {
         if nightModeEnabled {
             setNightMode(true)
         }
+        applyTextZoomIfNeeded()
+    }
+
+    /// Applies the global text zoom (50–200%) chosen in settings.
+    func applyTextZoomIfNeeded() {
+        let zoom = UserDefaults.standard.object(forKey: textZoomKey) as? Double ?? 100
+        guard zoom != 100 else { return }
+        webView.evaluateJavaScript(
+            "document.body.style.webkitTextSizeAdjust='\(Int(zoom))%';",
+            completionHandler: nil
+        )
+    }
+
+    static let textZoomKey = "magdy.textZoom"
+
+    /// Applies the remembered per-site user agent (desktop/mobile) for the host.
+    func applyRememberedUserAgent(for url: URL?) {
+        guard let host = url?.host else { return }
+        let perSite = UserDefaults.standard.dictionary(forKey: "magdy.uaPerSite") as? [String: String] ?? [:]
+        if perSite[host] == "desktop" {
+            webView.customUserAgent = Self.desktopUserAgent
+        } else {
+            webView.customUserAgent = "MagdyBrowser/1.0"
+        }
+    }
+
+    static let desktopUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+
+    static func rememberUserAgent(host: String, desktop: Bool) {
+        var perSite = UserDefaults.standard.dictionary(forKey: "magdy.uaPerSite") as? [String: String] ?? [:]
+        perSite[host] = desktop ? "desktop" : "mobile"
+        UserDefaults.standard.set(perSite, forKey: "magdy.uaPerSite")
     }
 }
 

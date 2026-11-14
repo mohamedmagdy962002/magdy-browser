@@ -6,13 +6,13 @@ final class SettingsViewController: UITableViewController {
     private enum Row {
         case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache
         case filterLists, customFilterLists, wallpaper, language, about
-        case appLock, nightMode, searchEngine, vault, readingList, blockStats
+        case appLock, nightMode, searchEngine, vault, readingList, blockStats, theme, textZoom
     }
 
     private let sections: [(title: String, rows: [Row])] = [
         (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
         ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault]),
-        ("Appearance", [.nightMode, .wallpaper]),
+        ("Appearance", [.theme, .nightMode, .wallpaper, .textZoom]),
         (L.t("language"), [.language, .searchEngine, .readingList]),
         (L.t("about"), [.about])
     ]
@@ -76,6 +76,15 @@ final class SettingsViewController: UITableViewController {
         case .appLock:
             cell.textLabel?.text = "App Lock (Face ID)"
             cell.accessoryView = makeSwitch(key: AppLock.enabledKey, default: false)
+        case .theme:
+            cell.textLabel?.text = "Theme"
+            cell.accessoryType = .disclosureIndicator
+            cell.detailTextLabel?.text = (UserDefaults.standard.string(forKey: "magdy.theme") ?? "system").capitalized
+        case .textZoom:
+            cell.textLabel?.text = "Text Size"
+            cell.accessoryType = .disclosureIndicator
+            let zoom = UserDefaults.standard.object(forKey: BrowserTab.textZoomKey) as? Double ?? 100
+            cell.detailTextLabel?.text = "\(Int(zoom))%"
         case .nightMode:
             cell.textLabel?.text = "Night Mode"
             cell.accessoryView = makeSwitch(key: "magdy.nightMode", default: false)
@@ -129,6 +138,10 @@ final class SettingsViewController: UITableViewController {
             }
         case .readingList:
             navigationController?.pushViewController(ReadingListViewController(), animated: true)
+        case .theme:
+            chooseTheme()
+        case .textZoom:
+            chooseTextZoom()
         default:
             break
         }
@@ -179,6 +192,46 @@ final class SettingsViewController: UITableViewController {
         present(sheet, animated: true)
     }
 
+    private func chooseTheme() {
+        let sheet = UIAlertController(title: "Theme", message: nil, preferredStyle: .actionSheet)
+        for (label, value) in [("System", "system"), ("Light", "light"), ("Dark", "dark")] {
+            sheet.addAction(UIAlertAction(title: label, style: .default) { [weak self] _ in
+                UserDefaults.standard.set(value, forKey: "magdy.theme")
+                NotificationCenter.default.post(name: .magdyThemeChanged, object: nil)
+                self?.tableView.reloadData()
+            })
+        }
+        sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        present(sheet, animated: true)
+    }
+
+    private func chooseTextZoom() {
+        let sheet = UIAlertController(title: "Text Size", message: nil, preferredStyle: .actionSheet)
+        for percent in [80, 90, 100, 110, 125, 150, 175, 200] {
+            sheet.addAction(UIAlertAction(title: "\(percent)%", style: .default) { [weak self] _ in
+                UserDefaults.standard.set(Double(percent), forKey: BrowserTab.textZoomKey)
+                self?.tableView.reloadData()
+            })
+        }
+        sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        present(sheet, animated: true)
+    }
+
+    private func chooseSearchEngine() {
+        let sheet = UIAlertController(title: "Search Engine", message: nil, preferredStyle: .actionSheet)
+        for engine in SearchEngine.allCases {
+            sheet.addAction(UIAlertAction(title: engine.name, style: .default) { [weak self] _ in
+                SearchEngine.selected = engine
+                self?.tableView.reloadData()
+            })
+        }
+        sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 0, section: 3))
+        }
+        present(sheet, animated: true)
+    }
+
     private func clearBrowsingData(since date: Date) {
         let types: Set<String> = [
             WKWebsiteDataTypeDiskCache,
@@ -197,9 +250,9 @@ final class SettingsViewController: UITableViewController {
     private func clearBrowsingDataByRange() {
         let sheet = UIAlertController(title: "Clear Browsing Data", message: nil, preferredStyle: .actionSheet)
         let ranges: [(String, TimeInterval)] = [
-            ("Last hour", 3600),
-            ("Last 24 hours", 86400),
-            ("Last 7 days", 7 * 86400),
+            ("Last hour", -3600),
+            ("Last 24 hours", -86400),
+            ("Last 7 days", -7 * 86400),
             ("All time", .distantPast.timeIntervalSinceNow)
         ]
         for (title, interval) in ranges {

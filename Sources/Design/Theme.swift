@@ -7,15 +7,33 @@ enum Theme {
 
     // MARK: - Colors
 
-    static let canvas = UIColor(hex: 0xF5F5FB)
-    static let card = UIColor.white
+    /// Light/dark adaptive colors — dark values resolve automatically when the
+    /// interface style changes (or when the app is forced via the Theme setting).
+    private static func adaptive(light: UInt32, dark: UInt32) -> UIColor {
+        UIColor { trait in
+            trait.userInterfaceStyle == .dark ? UIColor(hex: dark) : UIColor(hex: light)
+        }
+    }
+
+    static let canvas = adaptive(light: 0xF5F5FB, dark: 0x121214)
+    static let card = adaptive(light: 0xFFFFFF, dark: 0x1E1E22)
     static let primary = UIColor(hex: 0x4A47F0)
     static let primaryAlt = UIColor(hex: 0x6C63FF)
     static let violet = UIColor(hex: 0x8A3FFC)
-    static let textPrimary = UIColor(hex: 0x1C1C1E)
-    static let textSecondary = UIColor(hex: 0x8E8E93)
-    static let hairline = UIColor(white: 0, alpha: 0.04)
-    static let glass = UIColor(white: 1, alpha: 0.88)
+    static let textPrimary = adaptive(light: 0x1C1C1E, dark: 0xF2F2F7)
+    static let textSecondary = adaptive(light: 0x8E8E93, dark: 0x98989F)
+    static let hairline = adaptive(light: 0x2C2C2E, dark: 0x3A3A3E).withAlphaComponent(0.08)
+    static let glass = adaptive(light: 0xFFFFFF, dark: 0x1C1C1E).withAlphaComponent(0.88)
+
+    /// App theme: system, forced light or forced dark. Forced styles are applied
+    /// per window in RootViewController.
+    static var forcedStyle: UIUserInterfaceStyle {
+        switch UserDefaults.standard.string(forKey: "magdy.theme") {
+        case "light": return .light
+        case "dark": return .dark
+        default: return .unspecified
+        }
+    }
 
     // MARK: - Metrics
 
@@ -55,8 +73,7 @@ enum Theme {
 
     /// Level 3 — primary action.
     static func fabShadow(_ view: UIView) {
-        view.layer.shadowColor = primary.cgColor
-        view.layer.shadowOpacity = 0.35
+        view.layer.shadowColor = primary.cgColor        view.layer.shadowOpacity = 0.35
         view.layer.shadowRadius = 22
         view.layer.shadowOffset = CGSize(width: 0, height: 8)
     }
