@@ -30,7 +30,7 @@ final class BrowserTab: NSObject {
         let activeIDs = Set(ContentBlocker.shared.ruleLists.map(\.identifier))
         // Detach rule lists that were disabled or replaced since they were applied.
         for (id, list) in appliedRuleLists where !activeIDs.contains(id) {
-            controller.removeContentRuleList(list)
+            controller.remove(list)
             appliedRuleLists.removeValue(forKey: id)
         }
         for list in ContentBlocker.shared.ruleLists where appliedRuleLists[list.identifier] == nil {
@@ -215,6 +215,13 @@ extension BrowserTab: WKUIDelegate {
         return nil
     }
 
+    /// BrowserTab is not a view controller — resolve the top-most one to present page dialogs.
+    private func presentingViewController() -> UIViewController? {
+        var top = webView.window?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
+    }
+
     func webView(
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
@@ -224,7 +231,7 @@ extension BrowserTab: WKUIDelegate {
         // Show real alerts — silently swallowing them hides page errors.
         let alert = UIAlertController(title: webView.title ?? webView.url?.host, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
-        present(alert, animated: true)
+        presentingViewController()?.present(alert, animated: true)
     }
 
     func webView(
@@ -237,7 +244,7 @@ extension BrowserTab: WKUIDelegate {
         let alert = UIAlertController(title: webView.title ?? webView.url?.host, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
-        present(alert, animated: true)
+        presentingViewController()?.present(alert, animated: true)
     }
 
     // Camera / mic / motion sensors: pages get the system prompt automatically.
