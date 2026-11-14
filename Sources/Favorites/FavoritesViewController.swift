@@ -131,7 +131,9 @@ final class FavoritesViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        true
+        // Reordering is only meaningful on the unfiltered list.
+        let query = searchController.searchBar.text?.isEmpty == false
+        return !query
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {

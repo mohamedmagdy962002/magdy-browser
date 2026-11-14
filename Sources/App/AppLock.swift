@@ -23,15 +23,27 @@ enum AppLock {
         }
     }
 
-    /// Gates a presentation: shows a locked cover until the user authenticates.
+    /// Gates a presentation: covers the screen first, then authenticates.
+    /// Nothing is interactive until the prompt succeeds.
     static func gate(viewController: UIViewController, reason: String, onUnlocked: @escaping () -> Void) {
+        let locked = LockedViewController()
+        locked.modalPresentationStyle = .overFullScreen
+        viewController.present(locked, animated: false)
         authenticate(reason: reason) { success in
             if success {
+                locked.dismiss(animated: false)
                 onUnlocked()
             } else {
-                let locked = LockedViewController()
-                locked.retry = { gate(viewController: viewController, reason: reason, onUnlocked: onUnlocked) }
-                viewController.present(locked, animated: false)
+                locked.retry = {
+                    locked.retry = nil
+                    authenticate(reason: reason) { retrySuccess in
+                        if retrySuccess {
+                            locked.dismiss(animated: false)
+                            onUnlocked()
+                        }
+                        // On failure the cover stays up — the user can tap Unlock again.
+                    }
+                }
             }
         }
     }

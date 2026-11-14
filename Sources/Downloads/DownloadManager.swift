@@ -19,6 +19,8 @@ final class DownloadItem {
     var cancel: (() -> Void)?
     var task: URLSessionDownloadTask?
     var resumeData: Data?
+    /// Bytes already on disk before the current resume session (for correct totals).
+    var resumeBaseBytes: Int64 = 0
 }
 
 /// Unlimited download queue: no count cap, no speed cap, no subscription gate.
@@ -136,6 +138,8 @@ final class DownloadManager: NSObject {
     func pause(_ item: DownloadItem) {
         guard let task = item.task, item.state == .running else { return }
         item.resumeData = nil
+        // Base offset so progress after resume counts the bytes already saved.
+        item.resumeBaseBytes = item.bytesWritten
         task.cancel(byProducingResumeData: { [weak self, weak item] data in
             guard let self, let item else { return }
             item.resumeData = data
@@ -147,7 +151,7 @@ final class DownloadManager: NSObject {
 
     /// Resumes a paused download from its stored resume data.
     func resume(_ item: DownloadItem) {
-        guard let data = item.resumeData, item.state == .paused else { return }
+        guard let data = item.resumeData, item.state == .paused || item.state == .failed || item.state == .cancelled else { return }
         item.resumeData = nil
         item.state = .running
         let task = session.downloadTask(withResumeData: data)
@@ -286,10 +290,11 @@ extension DownloadManager: URLSessionDownloadDelegate {
         totalBytesExpectedToWrite: Int64
     ) {
         guard let item = taskItems[downloadTask.taskIdentifier] else { return }
-        item.bytesWritten = totalBytesWritten
-        item.totalBytes = totalBytesExpectedToWrite
-        if totalBytesExpectedToWrite > 0 {
-            item.progress = min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
+        let base = item.resumeBaseBytes
+        item.bytesWritten = base + totalBytesWritten
+        item.totalBytes = base + totalBytesExpectedToWrite
+        if item.totalBytes > 0 {
+            item.progress = min(1, Double(item.bytesWritten) / Double(item.totalBytes))
         }
         notify()
     }
@@ -300,11 +305,15 @@ extension DownloadManager: URLSessionDownloadDelegate {
         didFinishDownloadingTo location: URL
     ) {
         guard let item = taskItems[downloadTask.taskIdentifier] else { return }
-        let destination = directory.appendingPathComponent(item.fileName)
+        taskItems.removeValue(forKey: downloadTask.taskIdentifier)
+        // Resolve the name now — two concurrent same-name downloads would
+        // otherwise both be told the same destination.
+        let destination = directory.appendingPathComponent(uniqueName(item.fileName))
         try? FileManager.default.removeItem(at: destination)
         do {
             try FileManager.default.moveItem(at: location, to: destination)
             item.localURL = destination
+            item.fileName = destination.lastPathComponent
             item.state = .finished
             item.progress = 1
         } catch {

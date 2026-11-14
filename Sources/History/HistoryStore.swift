@@ -79,13 +79,16 @@ final class HistoryStore {
 
     private func scheduleSave() {
         pendingSave?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.save() }
+        // Snapshot on the main thread — the background save must not read
+        // `entries` while a browsing mutation is writing it.
+        let snapshot = entries
+        let work = DispatchWorkItem { [weak self] in self?.save(snapshot) }
         pendingSave = work
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1, execute: work)
     }
 
-    private func save() {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
+    private func save(_ snapshot: [HistoryEntry]) {
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
         try? data.write(to: fileURL, options: .atomic)
     }
 

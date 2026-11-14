@@ -17,7 +17,7 @@ final class BrowserTab: NSObject {
 
     private var progressObservation: NSKeyValueObservation?
     private var blockerObserver: UUID?
-    private var appliedRuleListIDs: Set<String> = []
+    private var appliedRuleLists: [String: WKContentRuleList] = [:]
 
     deinit {
         if let blockerObserver {
@@ -26,9 +26,16 @@ final class BrowserTab: NSObject {
     }
 
     private func applyNewRuleLists() {
-        for list in ContentBlocker.shared.ruleLists where !appliedRuleListIDs.contains(list.identifier) {
-            appliedRuleListIDs.insert(list.identifier)
-            webView.configuration.userContentController.add(list)
+        let controller = webView.configuration.userContentController
+        let activeIDs = Set(ContentBlocker.shared.ruleLists.map(\.identifier))
+        // Detach rule lists that were disabled or replaced since they were applied.
+        for (id, list) in appliedRuleLists where !activeIDs.contains(id) {
+            controller.removeContentRuleList(list)
+            appliedRuleLists.removeValue(forKey: id)
+        }
+        for list in ContentBlocker.shared.ruleLists where appliedRuleLists[list.identifier] == nil {
+            appliedRuleLists[list.identifier] = list
+            controller.add(list)
         }
     }
 
@@ -52,7 +59,7 @@ final class BrowserTab: NSObject {
         webView.customUserAgent = "MagdyBrowser/1.0"
 
         ContentBlocker.shared.apply(to: configuration.userContentController)
-        appliedRuleListIDs = Set(ContentBlocker.shared.ruleLists.map(\.identifier))
+        appliedRuleLists = Dictionary(uniqueKeysWithValues: ContentBlocker.shared.ruleLists.map { ($0.identifier, $0) })
 
         // Tapping a video on the page opens the in-app player.
         let videoHook = """
@@ -214,7 +221,10 @@ extension BrowserTab: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping () -> Void
     ) {
-        completionHandler()
+        // Show real alerts — silently swallowing them hides page errors.
+        let alert = UIAlertController(title: webView.title ?? webView.url?.host, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
+        present(alert, animated: true)
     }
 
     func webView(
@@ -223,7 +233,11 @@ extension BrowserTab: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping (Bool) -> Void
     ) {
-        completionHandler(true)
+        // Real confirm — auto-answering OK would fire destructive actions on pages.
+        let alert = UIAlertController(title: webView.title ?? webView.url?.host, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
+        present(alert, animated: true)
     }
 
     // Camera / mic / motion sensors: pages get the system prompt automatically.
@@ -291,10 +305,17 @@ extension BrowserTab {
             return
         }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let name = (webView.title ?? "page").replacingOccurrences(of: "/", with: "-")
+        var name = (webView.title ?? "page")
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        if name.isEmpty { name = "page" }
         let url = docs.appendingPathComponent("\(name)-\(Int(Date().timeIntervalSince1970)).pdf")
-        try? data.write(to: url)
-        completion(url)
+        do {
+            try data.write(to: url)
+            completion(url)
+        } catch {
+            completion(nil)
+        }
     }
 
     /// Injects or removes the night-mode CSS filter on the live page.

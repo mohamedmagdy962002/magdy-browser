@@ -22,8 +22,14 @@ enum Theme {
     static let violet = UIColor(hex: 0x8A3FFC)
     static let textPrimary = adaptive(light: 0x1C1C1E, dark: 0xF2F2F7)
     static let textSecondary = adaptive(light: 0x8E8E93, dark: 0x98989F)
-    static let hairline = adaptive(light: 0x2C2C2E, dark: 0x3A3A3E).withAlphaComponent(0.08)
-    static let glass = adaptive(light: 0xFFFFFF, dark: 0x1C1C1E).withAlphaComponent(0.88)
+    // Alpha must be applied inside the provider — withAlphaComponent on a dynamic
+    // color resolves it once and freezes the light/dark value.
+    static let hairline = UIColor { t in
+        (t.userInterfaceStyle == .dark ? UIColor(hex: 0x3A3A3E) : UIColor(hex: 0x2C2C2E)).withAlphaComponent(0.08)
+    }
+    static let glass = UIColor { t in
+        (t.userInterfaceStyle == .dark ? UIColor(hex: 0x1C1C1E) : UIColor(hex: 0xFFFFFF)).withAlphaComponent(0.88)
+    }
 
     /// App theme: system, forced light or forced dark. Forced styles are applied
     /// per window in RootViewController.

@@ -20,7 +20,8 @@ final class SettingsViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = L.t("settings")
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        // .value1 style so detailTextLabel actually exists (plain cells have nil).
+        tableView.register(ValueCell.self, forCellReuseIdentifier: "cell")
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -202,6 +203,9 @@ final class SettingsViewController: UITableViewController {
             })
         }
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 0, section: 2))
+        }
         present(sheet, animated: true)
     }
 
@@ -214,6 +218,9 @@ final class SettingsViewController: UITableViewController {
             })
         }
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 3, section: 2))
+        }
         present(sheet, animated: true)
     }
 
@@ -227,7 +234,7 @@ final class SettingsViewController: UITableViewController {
         }
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
         if let popover = sheet.popoverPresentationController {
-            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 0, section: 3))
+            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 1, section: 3))
         }
         present(sheet, animated: true)
     }
@@ -278,4 +285,14 @@ final class SettingsViewController: UITableViewController {
         alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
         present(alert, animated: true)
     }
+}
+
+/// Cell with a working detailTextLabel (plain UITableViewCell has a nil one).
+final class ValueCell: UITableViewCell {
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: .value1, reuseIdentifier: reuseIdentifier)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }

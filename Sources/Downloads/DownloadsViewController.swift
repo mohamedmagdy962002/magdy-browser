@@ -94,12 +94,17 @@ final class DownloadsViewController: UITableViewController {
                 completion(true)
             }
             cancel.backgroundColor = .systemOrange
-            let pause = UIContextualAction(style: .normal, title: "Pause") { _, _, completion in
-                self.manager.pause(item)
-                completion(true)
+            var actions = [delete, cancel]
+            // Only URLSession tasks support pause/resume — WKDownload rows skip Pause.
+            if item.task != nil {
+                let pause = UIContextualAction(style: .normal, title: "Pause") { _, _, completion in
+                    self.manager.pause(item)
+                    completion(true)
+                }
+                pause.backgroundColor = .systemBlue
+                actions.append(pause)
             }
-            pause.backgroundColor = .systemBlue
-            return UISwipeActionsConfiguration(actions: [delete, cancel, pause])
+            return UISwipeActionsConfiguration(actions: actions)
         }
         if item.state == .paused {
             let resume = UIContextualAction(style: .normal, title: "Resume") { _, _, completion in
@@ -108,6 +113,17 @@ final class DownloadsViewController: UITableViewController {
             }
             resume.backgroundColor = .systemGreen
             return UISwipeActionsConfiguration(actions: [delete, resume])
+        }
+        if item.state == .failed || item.state == .cancelled {
+            // Offer resume when a failed/cancelled item still carries resume data.
+            if item.resumeData != nil {
+                let resume = UIContextualAction(style: .normal, title: "Resume") { _, _, completion in
+                    self.manager.resume(item)
+                    completion(true)
+                }
+                resume.backgroundColor = .systemGreen
+                return UISwipeActionsConfiguration(actions: [delete, resume])
+            }
         }
         return UISwipeActionsConfiguration(actions: actions)
     }

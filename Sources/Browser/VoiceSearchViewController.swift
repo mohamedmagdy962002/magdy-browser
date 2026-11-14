@@ -70,16 +70,27 @@ final class VoiceSearchViewController: UIViewController {
             finish()
             return
         }
-        SFSpeechRecognizer.requestAuthorization { [weak self] _ in
-            DispatchQueue.main.async { self?.startListening() }
+        SFSpeechRecognizer.requestAuthorization { [weak self] status in
+            DispatchQueue.main.async {
+                if status == .authorized {
+                    self?.startListening()
+                } else {
+                    self?.statusLabel.text = "Speech permission denied — enable it in Settings"
+                }
+            }
         }
     }
 
     private func startListening() {
         statusLabel.text = "Listening…"
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try? session.setActive(true, options: .notifyOthersOnDeactivation)
+        do {
+            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            statusLabel.text = "Microphone unavailable"
+            return
+        }
 
         let input = audioEngine.inputNode
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -89,10 +100,16 @@ final class VoiceSearchViewController: UIViewController {
         input.installTap(onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0)) { buffer, _ in
             request.append(buffer)
         }
-        try? audioEngine.start()
+        do {
+            try audioEngine.start()
+        } catch {
+            stopListening()
+            statusLabel.text = "Could not start the microphone"
+            return
+        }
         audioEngine.prepare()
 
-        task = speech?.recognitionTask(with: request) { [weak self] result, _ in
+        task = speech?.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
             if let result, !result.bestTranscription.formattedString.isEmpty {
                 self.resultLabel.text = result.bestTranscription.formattedString
@@ -101,15 +118,25 @@ final class VoiceSearchViewController: UIViewController {
                 self.onText?(result.bestTranscription.formattedString)
                 self.stopListening()
                 self.dismiss(animated: true)
+                return
+            }
+            if error != nil, self.task != nil {
+                self.stopListening()
+                self.statusLabel.text = "Try again"
             }
         }
     }
 
     private func finish() {
         request?.endAudio()
-        if resultLabel.text?.isEmpty == true {
-            statusLabel.text = "Tap to speak"
+        // The user tapped to stop: hand over whatever was transcribed so far.
+        if let text = resultLabel.text, !text.isEmpty {
+            onText?(text)
+            stopListening()
+            dismiss(animated: true)
+            return
         }
+        statusLabel.text = "Tap to speak"
     }
 
     private func stopListening() {

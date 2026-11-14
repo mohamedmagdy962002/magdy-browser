@@ -57,7 +57,7 @@ final class FilterListManager {
         let pending = lists.filter { wanted.contains($0.id) && compiled[$0.id] == nil }
 
         guard !pending.isEmpty else {
-            completion?(Array(compiled.values))
+            completion?(enabledIDs.compactMap { compiled[$0] })
             return
         }
 
@@ -75,8 +75,10 @@ final class FilterListManager {
                     forIdentifier: "MagdyFilter.\(list.id)",
                     encodedContentRuleList: encoded
                 ) { [weak self] ruleList, _ in
-                    if let ruleList { self?.compiled[list.id] = ruleList }
-                    group.leave()
+                    DispatchQueue.main.async {
+                        if let ruleList { self?.compiled[list.id] = ruleList }
+                        group.leave()
+                    }
                 }
             }
         }
@@ -99,10 +101,10 @@ final class FilterListManager {
                 forIdentifier: "MagdyFilter.\(id)",
                 encodedContentRuleList: encoded
             ) { [weak self] ruleList, _ in
-                guard let self, let ruleList else { return }
-                self.compiled[id] = ruleList
-                self.collectBlockedDomains()
                 DispatchQueue.main.async {
+                    guard let self, let ruleList else { return }
+                    self.compiled[id] = ruleList
+                    self.collectBlockedDomains()
                     self.observers.values.forEach { $0() }
                     self.onChange?()
                 }
@@ -204,10 +206,11 @@ final class FilterListManager {
 
     private static func domain(in rule: String) -> String? {
         var body = rule
-        for marker in ["$", "|", "^", "*", "/"] where body.contains(marker) {
-            if let range = body.range(of: marker) {
-                body = String(body[body.startIndex..<range.lowerBound])
-            }
+        if body.hasPrefix("||") { body.removeFirst(2) }
+        else if body.hasPrefix("|") { body.removeFirst(1) }
+        // Cut at the first separator: option ($), anchor (^), path (/), wildcard (*), or end anchor (|).
+        if let cut = body.firstIndex(where: { $0 == "$" || $0 == "^" || $0 == "/" || $0 == "*" || $0 == "|" }) {
+            body = String(body[body.startIndex..<cut])
         }
         body = body.replacingOccurrences(of: "||", with: "")
         let parts = body.split(separator: ".")

@@ -11,6 +11,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private let addressRow = UIStackView()
     private let addressField = UITextField()
     private let reloadButton = UIButton(type: .system)
+    private let menuButton = UIButton(type: .system)
     private let progressBar = UIProgressView(progressViewStyle: .default)
     private let toolbar = UIStackView()
     private let tabButton = UIButton(type: .system)
@@ -125,7 +126,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         newTabButton.tintColor = Theme.textPrimary
         newTabButton.addTarget(self, action: #selector(newTabTapped), for: .touchUpInside)
 
-        let menuButton = UIButton(type: .system)
+        let menuButton = self.menuButton
         menuButton.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
         menuButton.tintColor = Theme.textPrimary
         menuButton.showsMenuAsPrimaryAction = true
@@ -406,20 +407,27 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         activeTab?.webView.removeFromSuperview()
         activeTab = tab
 
-        tab.onTitleChange = { [weak self] _ in self?.refreshToolbar() }
-        tab.onLoadingChange = { [weak self] tab, loading in
+        // Only the visible tab may drive chrome UI — background tabs finishing
+        // their load must not flicker the progress bar or reload button.
+        tab.onTitleChange = { [weak self] _ in
+            guard self?.activeTab === tab else { return }
             self?.refreshToolbar()
-            self?.reloadButton.setImage(
+        }
+        tab.onLoadingChange = { [weak self] changedTab, loading in
+            guard let self, self.activeTab === changedTab else { return }
+            self.refreshToolbar()
+            self.reloadButton.setImage(
                 UIImage(systemName: loading ? "xmark" : "arrow.clockwise"),
                 for: .normal
             )
             if !loading {
-                self?.store.persist()
+                self.store.persist()
             }
         }
-        tab.onProgress = { [weak self] tab, progress in
-            self?.progressBar.isHidden = progress >= 1 || progress == 0
-            self?.progressBar.setProgress(Float(progress), animated: true)
+        tab.onProgress = { [weak self] changedTab, progress in
+            guard let self, self.activeTab === changedTab else { return }
+            self.progressBar.isHidden = progress >= 1 || progress == 0
+            self.progressBar.setProgress(Float(progress), animated: true)
         }
         tab.onVideoTapped = { [weak self] url, title in
             self?.presentVideoPlayer(url: url, title: title)
@@ -437,6 +445,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         tab.webView.frame = webContainer.bounds
         tab.webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
+        // Apply global page styles to an already-loaded tab (they are per-webView
+        // injections, so switching tabs must re-apply them).
+        tab.applyNightModeIfNeeded()
         refreshToolbar()
     }
 
@@ -447,9 +458,14 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         forwardButton.isEnabled = tab.webView.canGoForward
         // The floating download action belongs to the start page only.
         downloadFAB.isHidden = tab.webView.url != nil
-        if !addressField.isFirstResponder, let url = tab.webView.url {
-            addressField.text = url.absoluteString
+        if !addressField.isFirstResponder {
+            addressField.text = tab.webView.url?.absoluteString ?? ""
         }
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        menuButton.menu = makeMenu() // rebuild so toggle titles (Night Mode) are current
     }
 
     private func closeAllTabs() {
@@ -514,8 +530,20 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let grid = TabGridViewController(
             store: store,
             onActivate: { [weak self] tab in self?.activate(tab) },
-            onNewTab: { [weak self] privateMode in self?.openNewTab(privateMode: privateMode) },
-            onReopen: { [weak self] closed in self?.closedTabs.append(closed) }
+            onNewTab: { [weak self] in
+                self?.openNewTab(privateMode: UserDefaultsKey.bool(UserDefaultsKey.defaultPrivate, default: false))
+            },
+            onReopen: { [weak self] closed in self?.closedTabs.append(closed) },
+            onClosed: { [weak self] tab in
+                guard let self, self.activeTab === tab else { return }
+                // The visible tab was closed from the grid — show another tab
+                // or start a fresh one so no zombie page stays on screen.
+                if let next = self.store.tabs.first {
+                    self.activate(next)
+                } else {
+                    self.openNewTab(privateMode: false)
+                }
+            }
         )
         let navigation = UINavigationController(rootViewController: grid)
         navigation.modalPresentationStyle = .pageSheet
@@ -660,6 +688,10 @@ extension BrowserViewController {
 
     func textFieldDidEndEditing(_ textField: UITextField) {
         suggestionsTable.isHidden = true
+        // Restore the current URL when the user dismisses the keyboard without navigating.
+        if (textField.text ?? "").isEmpty {
+            textField.text = activeTab?.webView.url?.absoluteString ?? ""
+        }
     }
 
     func textField(
@@ -674,7 +706,8 @@ extension BrowserViewController {
             return true
         }
         SearchEngine.suggestions(for: query) { [weak self] results in
-            guard let self, textField.isFirstResponder else { return }
+            // Drop out-of-order responses for queries the user already replaced.
+            guard let self, textField.isFirstResponder, textField.text?.trimmingCharacters(in: .whitespaces) == query else { return }
             self.suggestions = results
             self.suggestionsTable.reloadData()
             self.suggestionsTable.isHidden = results.isEmpty
@@ -814,11 +847,18 @@ extension BrowserViewController {
     }
 
     private func lockNow() {
-        let locked = LockedViewController()
-        locked.retry = { [weak locked] in
-            locked?.dismiss(animated: true)
+        // Present the auth gate over the top-most controller so the whole app is covered.
+        let base = view.window?.rootViewController?.presentedViewController
+            ?? view.window?.rootViewController
+            ?? self
+        guard AppLock.isEnabled else {
+            // Lock not enabled: just cover with the manual lock screen.
+            let locked = LockedViewController()
+            locked.retry = { locked.dismiss(animated: true) }
+            locked.modalPresentationStyle = .overFullScreen
+            present(locked, animated: false)
+            return
         }
-        locked.modalPresentationStyle = .overFullScreen
-        present(locked, animated: false)
+        AppLock.gate(viewController: base, reason: "Unlock Magdy Browser", onUnlocked: {})
     }
 }

@@ -81,6 +81,7 @@ final class ReaderViewController: UIViewController {
     private let textView = UITextView()
     private let synthesizer = AVSpeechSynthesizer()
     private var isSpeaking = false
+    private var speakButton = UIBarButtonItem(image: UIImage(systemName: "speaker.wave.2"), style: .plain, target: nil, action: nil)
 
     init(article: ReaderMode.Article) {
         self.article = article
@@ -96,6 +97,7 @@ final class ReaderViewController: UIViewController {
         let speak = UIBarButtonItem(
             image: UIImage(systemName: "speaker.wave.2"), style: .plain, target: self, action: #selector(toggleSpeaking)
         )
+        speakButton = speak
         let save = UIBarButtonItem(
             image: UIImage(systemName: "book"), style: .plain, target: self, action: #selector(saveToReadingList)
         )
@@ -160,15 +162,18 @@ final class ReaderViewController: UIViewController {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
             isSpeaking = false
-            navigationItem.rightBarButtonItems?.first?.image = UIImage(systemName: "speaker.wave.2")
+            speakButton.image = UIImage(systemName: "speaker.wave.2")
             return
         }
+        // Playback category keeps read-aloud audible with the mute switch on.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
         let text = article.paragraphs.joined(separator: ". ")
         let utterance = AVSpeechUtterance(string: article.title + ". " + text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synthesizer.speak(utterance)
         isSpeaking = true
-        navigationItem.rightBarButtonItems?.first?.image = UIImage(systemName: "speaker.slash")
+        speakButton.image = UIImage(systemName: "speaker.slash")
     }
 
     @objc private func saveToReadingList() {
@@ -182,6 +187,7 @@ final class ReaderViewController: UIViewController {
 extension ReaderViewController: AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
-        navigationItem.rightBarButtonItems?.first?.image = UIImage(systemName: "speaker.wave.2")
+        speakButton.image = UIImage(systemName: "speaker.wave.2")
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }

@@ -25,32 +25,37 @@ final class ContentBlocker {
                 encodedContentRuleList: encoded
             ) { [weak self] list, _ in
                 guard let self, let list else { return }
-                self.ruleLists.append(list)
-                self.broadcast()
+                DispatchQueue.main.async {
+                    self.ruleLists.append(list)
+                    self.broadcast()
+                }
             }
         }
 
         // Upstream filter lists (EasyList, EasyPrivacy, regionals).
         FilterListManager.shared.compileEnabled { [weak self] compiled in
             guard let self else { return }
-            for list in compiled where !self.ruleLists.contains(where: { $0.identifier == list.identifier }) {
-                self.ruleLists.append(list)
+            DispatchQueue.main.async {
+                for list in compiled where !self.ruleLists.contains(where: { $0.identifier == list.identifier }) {
+                    self.ruleLists.append(list)
+                }
+                self.broadcast()
             }
-            self.broadcast()
         }
 
         // User-added custom lists compile asynchronously; sync them when the manager reports changes.
         FilterListManager.shared.onChange = { [weak self] in
             guard let self else { return }
-            for list in FilterListManager.shared.compiled.values
-            where !self.ruleLists.contains(where: { $0.identifier == list.identifier }) {
-                self.ruleLists.append(list)
+            DispatchQueue.main.async {
+                // Rebuild from the currently-enabled lists only — toggling a list
+                // off must detach its rules, not keep them attached.
+                self.ruleLists.removeAll { $0.identifier.hasPrefix("MagdyFilter.") }
+                for list in FilterListManager.shared.activeRuleLists()
+                where !self.ruleLists.contains(where: { $0.identifier == list.identifier }) {
+                    self.ruleLists.append(list)
+                }
+                self.broadcast()
             }
-            self.ruleLists.removeAll { list in
-                list.identifier.hasPrefix("MagdyFilter.") &&
-                    !FilterListManager.shared.compiled.values.contains { $0.identifier == list.identifier }
-            }
-            self.broadcast()
         }
     }
 

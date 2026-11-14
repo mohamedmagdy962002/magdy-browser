@@ -145,8 +145,13 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
             if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
                 provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, _ in
                     guard let url else { return }
+                    // The provider temp file is only valid inside this callback —
+                    // copy synchronously, then hop to main for the UI update.
+                    let stable = FileManager.default.temporaryDirectory
+                        .appendingPathComponent(UUID().uuidString + "." + url.pathExtension)
+                    try? FileManager.default.copyItem(at: url, to: stable)
                     DispatchQueue.main.async {
-                        store.importItem(at: url)
+                        store.importItem(at: stable)
                         self.reload()
                     }
                 }
@@ -154,7 +159,8 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
                 provider.loadObject(ofClass: UIImage.self) { object, _ in
                     guard let image = object as? UIImage else { return }
                     DispatchQueue.main.async {
-                        let name = "photo-\(Int(Date().timeIntervalSince1970)).png"
+                        // Unique name — two photos in the same second must not overwrite each other.
+                        let name = "photo-\(UUID().uuidString).png"
                         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
                         try? image.pngData()?.write(to: url)
                         store.importItem(at: url)
@@ -183,6 +189,8 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
         preview.completionWithItemsHandler = { _, _, _, _ in
             // Sharing hands the file out only while unlocked; nothing persists outside the sandbox.
         }
+        // iPad requires a popover anchor.
+        preview.popoverPresentationController?.sourceView = collectionView.cellForItem(at: indexPath)
         present(preview, animated: true)
     }
 

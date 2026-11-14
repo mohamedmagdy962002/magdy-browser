@@ -19,21 +19,23 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         window.makeKeyAndVisible()
         self.window = window
 
-        // App lock on launch.
+        // App lock on launch — cover first, then Face ID.
         if AppLock.isEnabled {
-            AppLock.authenticate(reason: "Unlock Magdy Browser") { success in
-                if !success {
-                    let locked = LockedViewController()
-                    locked.retry = {
-                        locked.dismiss(animated: false)
-                        AppLock.authenticate(reason: "Unlock Magdy Browser") { _ in }
-                    }
-                    locked.modalPresentationStyle = .overFullScreen
-                    window.rootViewController?.present(locked, animated: false)
-                }
-            }
+            lockApp()
         }
         return true
+    }
+
+    /// Re-locks every time the app returns from the background.
+    func applicationWillEnterForeground(_ application: UIApplication) {
+        guard AppLock.isEnabled,
+              window?.rootViewController?.presentedViewController is LockedViewController == false else { return }
+        lockApp()
+    }
+
+    private func lockApp() {
+        guard let root = window?.rootViewController else { return }
+        AppLock.gate(viewController: root, reason: "Unlock Magdy Browser", onUnlocked: {})
     }
 
     /// Handles magdy://open?url=... from the share / action extensions.

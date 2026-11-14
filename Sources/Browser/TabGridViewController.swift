@@ -11,19 +11,24 @@ final class TabGridViewController: UICollectionViewController {
 
     private let store: TabStore
     private let onActivate: (BrowserTab) -> Void
-    private let onNewTab: (Bool) -> Void
+    private let onNewTab: () -> Void
     private let onReopen: (ClosedTab) -> Void
+    /// Called for every tab closed from the grid, so the browser can recover
+    /// its active tab when the visible one is closed here.
+    private let onClosed: (BrowserTab) -> Void
 
     init(
         store: TabStore,
         onActivate: @escaping (BrowserTab) -> Void,
-        onNewTab: @escaping (Bool) -> Void,
-        onReopen: @escaping (ClosedTab) -> Void
+        onNewTab: @escaping () -> Void,
+        onReopen: @escaping (ClosedTab) -> Void,
+        onClosed: @escaping (BrowserTab) -> Void
     ) {
         self.store = store
         self.onActivate = onActivate
         self.onNewTab = onNewTab
         self.onReopen = onReopen
+        self.onClosed = onClosed
         let layout = UICollectionViewFlowLayout()
         layout.itemSize = CGSize(width: 170, height: 210)
         layout.minimumInteritemSpacing = 12
@@ -50,7 +55,7 @@ final class TabGridViewController: UICollectionViewController {
     }
 
     @objc private func newTabTapped() {
-        onNewTab(false)
+        onNewTab()
         dismiss(animated: true)
     }
 
@@ -92,6 +97,7 @@ final class TabGridViewController: UICollectionViewController {
             guard let self else { return }
             self.onReopen(ClosedTab(url: tab.webView.url, isPrivate: tab.isPrivate))
             self.store.close(tab)
+            self.onClosed(tab)
             collectionView.deleteItems(at: [indexPath])
             completion(true)
         }
@@ -110,12 +116,14 @@ final class TabGridViewController: UICollectionViewController {
                     guard let self else { return }
                     self.onReopen(ClosedTab(url: tab.webView.url, isPrivate: tab.isPrivate))
                     self.store.close(tab)
+                    self.onClosed(tab)
                     collectionView.reloadData()
                 },
                 UIAction(title: "Close All Tabs", image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in
                     guard let self else { return }
                     for item in self.store.tabs {
                         self.onReopen(ClosedTab(url: item.webView.url, isPrivate: item.isPrivate))
+                        self.onClosed(item)
                     }
                     self.store.closeAll()
                     collectionView.reloadData()

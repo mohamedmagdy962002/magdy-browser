@@ -45,7 +45,7 @@ final class HistoryViewController: UITableViewController {
         })
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         if let popover = alert.popoverPresentationController {
-            popover.sourceView = navigationItem.rightBarButtonItem?.customView
+            popover.barButtonItem = navigationItem.rightBarButtonItem
         }
         present(alert, animated: true)
     }
@@ -85,7 +85,9 @@ final class HistoryViewController: UITableViewController {
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
         let delete = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, completion in
-            self?.store.remove(at: indexPath.row)
+            // Match by identity — `entries` is filtered, so row index ≠ store index.
+            let entry = self?.entries[indexPath.row]
+            self?.store.remove { $0.url == entry?.url && $0.date == entry?.date }
             self?.reload()
             completion(true)
         }
