@@ -253,7 +253,7 @@ final class SettingsViewController: UITableViewController {
             ("Last hour", -3600),
             ("Last 24 hours", -86400),
             ("Last 7 days", -7 * 86400),
-            ("All time", .distantPast.timeIntervalSinceNow)
+            ("All time", -1e12)
         ]
         for (title, interval) in ranges {
             sheet.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in

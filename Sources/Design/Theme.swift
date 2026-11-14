@@ -73,7 +73,8 @@ enum Theme {
 
     /// Level 3 — primary action.
     static func fabShadow(_ view: UIView) {
-        view.layer.shadowColor = primary.cgColor        view.layer.shadowOpacity = 0.35
+        view.layer.shadowColor = primary.cgColor
+        view.layer.shadowOpacity = 0.35
         view.layer.shadowRadius = 22
         view.layer.shadowOffset = CGSize(width: 0, height: 8)
     }

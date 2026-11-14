@@ -325,7 +325,7 @@ extension BrowserTab {
 
     /// Applies the global text zoom (50–200%) chosen in settings.
     func applyTextZoomIfNeeded() {
-        let zoom = UserDefaults.standard.object(forKey: textZoomKey) as? Double ?? 100
+        let zoom = UserDefaults.standard.object(forKey: BrowserTab.textZoomKey) as? Double ?? 100
         guard zoom != 100 else { return }
         webView.evaluateJavaScript(
             "document.body.style.webkitTextSizeAdjust='\(Int(zoom))%';",

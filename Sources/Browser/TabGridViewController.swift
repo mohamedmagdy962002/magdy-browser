@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 
 /// Grid tab switcher with live page snapshots, close actions and reopen.
-final class TabGridViewController: UICollectionViewController {
+final class TabGridViewController: UICollectionViewController, UICollectionViewDelegate {
 
     struct ClosedTab {
         let url: URL?
@@ -81,7 +81,7 @@ final class TabGridViewController: UICollectionViewController {
         dismiss(animated: true)
     }
 
-    override func collectionView(
+    func collectionView(
         _ collectionView: UICollectionView,
         trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
