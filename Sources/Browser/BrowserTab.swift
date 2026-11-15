@@ -313,35 +313,6 @@ extension BrowserTab: WKNavigationDelegate {
 // MARK: - UI delegate
 
 extension BrowserTab: WKUIDelegate {
-    /// Long-press on a link: open in new tab / private tab / Safari / copy.
-    func webView(
-        _ webView: WKWebView,
-        contextMenuConfigurationFor elementInfo: WKContextMenuElementInfo,
-        completionHandler: @escaping (UIContextMenuConfiguration?) -> Void
-    ) {
-        guard let url = elementInfo.linkURL else {
-            completionHandler(nil)
-            return
-        }
-        let config = UIContextMenuConfiguration(actionProvider: { [weak self] _ in
-            UIMenu(children: [
-                UIAction(title: "Open in New Tab", image: UIImage(systemName: "plus.square.on.square")) { _ in
-                    self?.onOpenLink?(url, false)
-                },
-                UIAction(title: "Open in Private Tab", image: UIImage(systemName: "eye.slash")) { _ in
-                    self?.onOpenLink?(url, true)
-                },
-                UIAction(title: "Open in Safari", image: UIImage(systemName: "safari")) { _ in
-                    UIApplication.shared.open(url)
-                },
-                UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { _ in
-                    UIPasteboard.general.string = url.absoluteString
-                }
-            ])
-        })
-        completionHandler(config)
-    }
-
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
         DownloadManager.shared.attach(download: download, url: navigationAction.request.url)
     }
@@ -406,7 +377,7 @@ extension BrowserTab: WKUIDelegate {
         decisionHandler(.prompt)
     }
 
-    /// Long-press on a link: open in new tab, copy, download.
+    /// Long-press on a link: open in new tab, private tab, Safari, copy, download.
     func webView(
         _ webView: WKWebView,
         contextMenuConfigurationFor elementInfo: WKContextMenuElementInfo,
@@ -420,6 +391,12 @@ extension BrowserTab: WKUIDelegate {
             UIMenu(children: [
                 UIAction(title: "Open in New Tab", image: UIImage(systemName: "plus.square.on.square")) { _ in
                     NotificationCenter.default.post(name: .magdyOpenURL, object: url)
+                },
+                UIAction(title: "Open in Private Tab", image: UIImage(systemName: "eye.slash")) { _ in
+                    self?.onOpenLink?(url, true)
+                },
+                UIAction(title: "Open in Safari", image: UIImage(systemName: "safari")) { _ in
+                    UIApplication.shared.open(url)
                 },
                 UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { _ in
                     UIPasteboard.general.string = url.absoluteString
