@@ -337,7 +337,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             guard let self,
                   let raw = UserDefaults.standard.string(forKey: BrowserViewController.homepageURLKey),
                   let url = URL(string: raw) else { return }
-            self.open(url, privateMode: false)
+            self.open(url: url, privateMode: false)
         }
         var children: [UIMenuElement] = [
             tabsGrid, reopen, privateTab, favorite, homepage, readingList, media, downloader,
