@@ -37,13 +37,13 @@ enum Theme {
         (t.userInterfaceStyle == .dark ? UIColor(hex: 0x13141B) : UIColor(hex: 0xFFFFFF)).withAlphaComponent(0.94)
     }
 
-    /// App theme: system, forced light or forced dark. Forced styles are applied
-    /// per window in RootViewController.
+    /// App theme: MASTER light by default, forced light or forced dark. Forced
+    /// styles are applied per window in RootViewController.
     static var forcedStyle: UIUserInterfaceStyle {
         switch UserDefaults.standard.string(forKey: "magdy.theme") {
-        case "light": return .light
+        case "system": return .unspecified
         case "dark": return .dark
-        default: return .unspecified
+        default: return .light
         }
     }
 

@@ -93,7 +93,7 @@ final class SettingsViewController: UITableViewController {
         case .theme:
             cell.textLabel?.text = "Theme"
             cell.accessoryType = .disclosureIndicator
-            cell.detailTextLabel?.text = (UserDefaults.standard.string(forKey: "magdy.theme") ?? "system").capitalized
+            cell.detailTextLabel?.text = (UserDefaults.standard.string(forKey: "magdy.theme") ?? "light").capitalized
         case .textZoom:
             cell.textLabel?.text = "Text Size"
             cell.accessoryType = .disclosureIndicator

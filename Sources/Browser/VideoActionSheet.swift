@@ -66,10 +66,13 @@ final class VideoActionSheet: UIViewController {
         }
         row("Download video", symbol: "arrow.down.circle") { [weak self] in
             guard let self else { return }
+            // Capture the presenter BEFORE dismissing — after dismiss it's nil
+            // and presenting from a detached VC silently fails.
+            let base = self.presentingViewController
             self.dismiss(animated: true) {
                 DownloadOptionsSheet.present(
                     url: self.url, referer: nil, cookies: self.cookies,
-                    presenter: self.presentingViewController ?? self
+                    presenter: base ?? VideoActionSheet.rootPresenter()
                 )
             }
         }
@@ -78,8 +81,11 @@ final class VideoActionSheet: UIViewController {
         }
         row("Share link", symbol: "square.and.arrow.up") { [weak self] in
             guard let self else { return }
-            let sheet = UIActivityViewController(activityItems: [self.url.absoluteString], applicationActivities: nil)
-            self.present(sheet, animated: true)
+            let base = self.presentingViewController
+            self.dismiss(animated: true) {
+                let sheet = UIActivityViewController(activityItems: [self.url.absoluteString], applicationActivities: nil)
+                (base ?? VideoActionSheet.rootPresenter())?.present(sheet, animated: true)
+            }
         }
 
         let stack = UIStackView(arrangedSubviews: [urlLabel, rowsStack])
@@ -114,6 +120,16 @@ final class VideoActionSheet: UIViewController {
 
     @objc private func rowTapped(_ sender: UIButton) {
         sender.runAction?()
+    }
+
+    /// Last-resort presenter when the sheet's presenting chain is gone.
+    private static func rootPresenter() -> UIViewController? {
+        var scene = UIApplication.shared.connectedScenes
+            .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
+        if scene == nil {
+            scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        }
+        return scene?.windows.first(where: { $0.isKeyWindow })?.rootViewController
     }
 }
 

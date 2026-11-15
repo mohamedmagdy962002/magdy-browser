@@ -268,6 +268,13 @@ final class VideoPlayerController: UIViewController {
             topBar.leadingAnchor.constraint(equalTo: chrome.leadingAnchor, constant: 18),
             topBar.trailingAnchor.constraint(equalTo: chrome.trailingAnchor, constant: -18),
 
+            // Pin the pill inside topBar so topBar gets a real height —
+            // zero-height topBar makes ✕/share/grab unhit-testable.
+            titleStack.topAnchor.constraint(equalTo: topBar.topAnchor),
+            titleStack.leadingAnchor.constraint(equalTo: topBar.leadingAnchor),
+            titleStack.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
+            titleStack.bottomAnchor.constraint(equalTo: topBar.bottomAnchor),
+
             closeButton.widthAnchor.constraint(equalToConstant: 34),
             grabButton.widthAnchor.constraint(equalToConstant: 34),
             shareButton.widthAnchor.constraint(equalToConstant: 34),
