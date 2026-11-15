@@ -199,6 +199,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
         Theme.fabShadow(downloadFAB)
 
+        view.addSubview(playerBanner)
+
         NSLayoutConstraint.activate([
             omnibox.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             omnibox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
