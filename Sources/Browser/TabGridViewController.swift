@@ -16,6 +16,10 @@ final class TabGridViewController: UICollectionViewController {
     /// Called for every tab closed from the grid, so the browser can recover
     /// its active tab when the visible one is closed here.
     private let onClosed: (BrowserTab) -> Void
+    private var searchController: UISearchController!
+    /// Nil = all tabs; non-nil = filtered by the grid search field.
+    private var filteredTabs: [BrowserTab]?
+    private var visibleTabs: [BrowserTab] { filteredTabs ?? store.tabs }
 
     init(
         store: TabStore,
@@ -52,6 +56,14 @@ final class TabGridViewController: UICollectionViewController {
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: "Done", style: .done, target: self, action: #selector(doneTapped)
         )
+        // Grid search: filters cards by page title or URL.
+        searchController = UISearchController(searchResultsController: nil)
+        searchController.searchResultsUpdater = self
+        searchController.obscuresBackgroundDuringPresentation = false
+        searchController.searchBar.placeholder = "Search tabs"
+        navigationItem.searchController = searchController
+        navigationItem.hidesSearchBarWhenScrolling = false
+        definesPresentationContext = true
     }
 
     @objc private func newTabTapped() {
@@ -64,12 +76,12 @@ final class TabGridViewController: UICollectionViewController {
     }
 
     override func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        store.tabs.count
+        visibleTabs.count
     }
 
     override func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "cell", for: indexPath) as! TabCardCell
-        let tab = store.tabs[indexPath.item]
+        let tab = visibleTabs[indexPath.item]
         cell.titleLabel.text = tab.title
         cell.hostLabel.text = tab.displayURL?.host ?? "Start page"
         cell.setPrivate(tab.isPrivate)
@@ -82,7 +94,7 @@ final class TabGridViewController: UICollectionViewController {
     }
 
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        onActivate(store.tabs[indexPath.item])
+        onActivate(visibleTabs[indexPath.item])
         dismiss(animated: true)
     }
 
@@ -92,13 +104,13 @@ final class TabGridViewController: UICollectionViewController {
         _ collectionView: UICollectionView,
         trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        let tab = store.tabs[indexPath.item]
+        let tab = visibleTabs[indexPath.item]
         let close = UIContextualAction(style: .destructive, title: "Close") { [weak self] _, _, completion in
             guard let self else { return }
             self.onReopen(ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
             self.store.close(tab)
             self.onClosed(tab)
-            collectionView.deleteItems(at: [indexPath])
+            collectionView.reloadData()
             completion(true)
         }
         return UISwipeActionsConfiguration(actions: [close])
@@ -109,7 +121,7 @@ final class TabGridViewController: UICollectionViewController {
         contextMenuConfigurationForItemAt indexPath: IndexPath,
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        let tab = store.tabs[indexPath.item]
+        let tab = visibleTabs[indexPath.item]
         return UIContextMenuConfiguration(actionProvider: { _ in
             UIMenu(children: [
                 UIAction(title: "Close Tab", image: UIImage(systemName: "xmark")) { [weak self] _ in
@@ -130,6 +142,17 @@ final class TabGridViewController: UICollectionViewController {
                 }
             ])
         })
+    }
+}
+
+extension TabGridViewController: UISearchResultsUpdating {
+    func updateSearchResults(for searchController: UISearchController) {
+        let text = (searchController.searchBar.text ?? "").lowercased()
+        filteredTabs = text.isEmpty ? nil : store.tabs.filter { tab in
+            tab.title.lowercased().contains(text)
+                || tab.displayURL?.absoluteString.lowercased().contains(text) == true
+        }
+        collectionView.reloadData()
     }
 }
 

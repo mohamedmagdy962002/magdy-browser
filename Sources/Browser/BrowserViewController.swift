@@ -282,6 +282,17 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         ) { [weak self] _ in
             self?.clearSiteData()
         }
+        let allowAds = activeTab?.webView.url?.host.map { host -> UIAction in
+            let allowed = BrowserTab.isAdAllowed(host)
+            return UIAction(
+                title: allowed ? "Re-enable Ads on This Site" : "Allow Ads on This Site",
+                image: UIImage(systemName: allowed ? "shield.fill" : "shield.lefthalf.filled.slash")
+            ) { [weak self] _ in
+                BrowserTab.setAdAllowed(host, !allowed)
+                self?.activeTab?.applyNewRuleLists()
+                self?.activeTab?.reload()
+            }
+        }
         let nightMode = UIAction(
             title: activeTab?.nightModeEnabled == true ? "Night Mode Off" : "Night Mode On",
             image: UIImage(systemName: "moon")
@@ -316,6 +327,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
                 },
                 at: 0
             )
+        }
+        // Per-site ad allowlist — only shown on a loaded page.
+        if let allowAds {
+            children.insert(allowAds, at: 0)
         }
         return UIMenu(children: children)
     }

@@ -40,8 +40,32 @@ final class BrowserTab: NSObject {
         webView.url ?? hibernatedURL
     }
 
-    private func applyNewRuleLists() {
+    // MARK: - Per-site ad allowlist
+
+    /// True when the user exempted this host from ad/tracker blocking.
+    static func isAdAllowed(_ host: String?) -> Bool {
+        guard let host else { return false }
+        let allowed = UserDefaults.standard.stringArray(forKey: "magdy.adAllowedSites") ?? []
+        return allowed.contains { host == $0 || host.hasSuffix(".\($0)") }
+    }
+
+    static func setAdAllowed(_ host: String, _ allowed: Bool) {
+        var hosts = UserDefaults.standard.stringArray(forKey: "magdy.adAllowedSites") ?? []
+        hosts.removeAll { $0 == host }
+        if allowed { hosts.append(host) }
+        UserDefaults.standard.set(hosts, forKey: "magdy.adAllowedSites")
+    }
+
+    func applyNewRuleLists() {
         let controller = webView.configuration.userContentController
+        if Self.isAdAllowed(webView.url?.host) {
+            // Exempted site: detach every rule list, including ones attached earlier.
+            for (id, list) in appliedRuleLists {
+                controller.remove(list)
+                appliedRuleLists.removeValue(forKey: id)
+            }
+            return
+        }
         let activeIDs = Set(ContentBlocker.shared.ruleLists.map(\.identifier))
         // Detach rule lists that were disabled or replaced since they were applied.
         for (id, list) in appliedRuleLists where !activeIDs.contains(id) {
@@ -188,6 +212,11 @@ extension BrowserTab: WKNavigationDelegate {
         onLoadingChange?(self, true)
         // Old page's feeds must not leak into the new one's menu.
         rssFeeds = []
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        // Host is final here — re-evaluate the per-site ad allowlist for this navigation.
+        applyNewRuleLists()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
