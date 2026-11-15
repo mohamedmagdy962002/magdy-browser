@@ -1,9 +1,10 @@
 import UIKit
 
-/// Design tokens generated from the Stitch "Magdy Browser — Modern Redesign" design system.
+/// Design tokens generated from the Stitch "Magdy Master" light design system.
 ///
-/// Dark: canvas #0D0E12 · card #181920 · border #262734 · primary #8B5CF6 → #A78BFA
-/// Light: canvas #FAFAFC · card #FFFFFF. Headlines Space Grotesk, body Manrope.
+/// Light ("MASTER" reference): surface #FBF8FF · card #FFFFFF · container #F5F2FB
+/// primary #5F48BD (deep periwinkle) · alt #7862D7 · text #1B1B21 / #484553.
+/// Dark: canvas #0D0E12 · card #181920 · border #262734 (kept from Magdy Modern).
 enum Theme {
 
     // MARK: - Colors
@@ -16,24 +17,24 @@ enum Theme {
         }
     }
 
-    static let canvas = adaptive(light: 0xFAFAFC, dark: 0x0D0E12)
+    static let canvas = adaptive(light: 0xFBF8FF, dark: 0x0D0E12)
     static let card = adaptive(light: 0xFFFFFF, dark: 0x181920)
     /// Elevated container (tables, section backgrounds).
-    static let container = adaptive(light: 0xFFFFFF, dark: 0x13141B)
-    static let primary = UIColor(hex: 0x8B5CF6)
-    static let primaryAlt = UIColor(hex: 0xA78BFA)
-    /// Soft violet tint background for icon squircles / accents.
-    static let primaryContainer = adaptive(light: 0xF1EBFE, dark: 0x24183E)
-    static let violet = UIColor(hex: 0xA78BFA)
-    static let textPrimary = adaptive(light: 0x1C1C1E, dark: 0xF3F4F6)
-    static let textSecondary = adaptive(light: 0x8E8E93, dark: 0x9CA3AF)
+    static let container = adaptive(light: 0xF5F2FB, dark: 0x13141B)
+    static let primary = adaptive(light: 0x5F48BD, dark: 0x8B5CF6)
+    static let primaryAlt = adaptive(light: 0x7862D7, dark: 0xA78BFA)
+    /// Soft lavender tint background for icon squircles / accents.
+    static let primaryContainer = adaptive(light: 0xE6DEFF, dark: 0x24183E)
+    static let violet = adaptive(light: 0x7862D7, dark: 0xA78BFA)
+    static let textPrimary = adaptive(light: 0x1B1B21, dark: 0xF3F4F6)
+    static let textSecondary = adaptive(light: 0x484553, dark: 0x9CA3AF)
     // Alpha must be applied inside the provider — withAlphaComponent on a dynamic
     // color resolves it once and freezes the light/dark value.
     static let hairline = UIColor { t in
-        (t.userInterfaceStyle == .dark ? UIColor(hex: 0x262734) : UIColor(hex: 0x2C2C2E)).withAlphaComponent(0.10)
+        (t.userInterfaceStyle == .dark ? UIColor(hex: 0x262734) : UIColor(hex: 0xC9C4D5)).withAlphaComponent(0.45)
     }
     static let glass = UIColor { t in
-        (t.userInterfaceStyle == .dark ? UIColor(hex: 0x13141B) : UIColor(hex: 0xFFFFFF)).withAlphaComponent(0.90)
+        (t.userInterfaceStyle == .dark ? UIColor(hex: 0x13141B) : UIColor(hex: 0xFFFFFF)).withAlphaComponent(0.94)
     }
 
     /// App theme: system, forced light or forced dark. Forced styles are applied

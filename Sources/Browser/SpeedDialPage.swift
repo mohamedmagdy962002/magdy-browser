@@ -69,10 +69,6 @@ enum SpeedDialPage {
             ? "<p class=\"empty\">Favorites and sites you visit will appear here as tiles.</p>"
             : ""
 
-        // Greeting follows the device clock.
-        let hour = Calendar.current.component(.hour, from: Date())
-        let greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
-
         let actions = [
             ("👁", "Private", "private"),
             ("⛶", "Scan QR", "qr"),
@@ -90,15 +86,19 @@ enum SpeedDialPage {
         return """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
-          :root{--canvas:#FAFAFC;--canvas-72:rgba(250,250,252,.72);--canvas-92:rgba(250,250,252,.92);
-                --canvas-98:rgba(250,250,252,.98);--text:#1C1C1E;--muted:#8E8E93;
-                --tile:#FFFFFF;--tile-shadow:0 2px 8px rgba(139,92,246,.05),0 8px 24px rgba(28,28,30,.07);
-                --badge-shadow:0 6px 14px rgba(139,92,246,.28);
-                --qa-bg:rgba(139,92,246,.12);--qa-border:rgba(139,92,246,.30)}
+          :root{--canvas:#FBF8FF;--canvas-72:rgba(251,248,255,.72);--canvas-92:rgba(251,248,255,.92);
+                --canvas-98:rgba(251,248,255,.98);--text:#1B1B21;--muted:#484553;
+                --accent:#5F48BD;--accent-2:#7862D7;
+                --tile:#FFFFFF;--tile-border:rgba(201,196,213,.55);
+                --tile-shadow:0 2px 8px rgba(95,72,189,.05),0 8px 24px rgba(27,27,33,.06);
+                --badge-shadow:0 6px 14px rgba(120,98,215,.30);
+                --qa-bg:rgba(120,98,215,.10);--qa-border:rgba(201,196,213,.55)}
           @media (prefers-color-scheme:dark){
             :root{--canvas:#0D0E12;--canvas-72:rgba(13,14,18,.72);--canvas-92:rgba(13,14,18,.92);
                   --canvas-98:rgba(13,14,18,.98);--text:#F3F4F6;--muted:#9CA3AF;
-                  --tile:#181920;--tile-shadow:0 2px 8px rgba(167,139,250,.06),0 8px 24px rgba(0,0,0,.35);
+                  --accent:#8B5CF6;--accent-2:#A78BFA;
+                  --tile:#181920;--tile-border:rgba(38,39,52,.9);
+                  --tile-shadow:0 2px 8px rgba(167,139,250,.06),0 8px 24px rgba(0,0,0,.35);
                   --badge-shadow:0 6px 14px rgba(0,0,0,.45);
                   --qa-bg:rgba(139,92,246,.15);--qa-border:rgba(139,92,246,.30)}
           }
@@ -107,18 +107,29 @@ enum SpeedDialPage {
                \(backgroundStyle)}
           .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
           .protected{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;
-                     background:var(--qa-bg);border:1px solid var(--qa-border);color:#A78BFA;
+                     background:var(--qa-bg);border:1px solid var(--qa-border);color:var(--accent-2);
                      font-size:12px;font-weight:600}
+          .hero{display:flex;flex-direction:column;align-items:center;gap:10px;
+                padding:26px 0 22px;text-align:center}
+          .monogram{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+                    background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff;
+                    font-size:26px;font-weight:800;box-shadow:var(--badge-shadow)}
+          .wordmark{font-size:30px;font-weight:200;letter-spacing:.28em;margin-right:-.28em;
+                    color:var(--text);text-transform:uppercase}
+          .search-pill{display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;
+                       background:var(--tile);border:1px solid var(--tile-border);
+                       box-shadow:var(--tile-shadow);color:var(--muted);font-size:14px}
           h1{font-size:28px;font-weight:800;letter-spacing:-0.4px;margin:0 0 4px}
-          p.note{color:var(--muted);font-size:14px;margin:0 0 18px}
+          p.note{color:var(--muted);font-size:14px;margin:0 0 18px;text-align:center}
           p.empty{color:var(--muted);font-size:14px;text-align:center;padding:40px 0}
           .qa-row{display:flex;justify-content:space-between;margin:0 2px 20px}
           .qa{background:none;border:0;padding:0;display:flex;flex-direction:column;align-items:center;gap:6px}
           .qa-circle{width:56px;height:56px;border-radius:999px;display:flex;align-items:center;justify-content:center;
-                     background:var(--qa-bg);border:1px solid var(--qa-border);font-size:20px;color:#A78BFA}
+                     background:var(--qa-bg);border:1px solid var(--qa-border);font-size:20px;color:var(--accent-2)}
           .qa-label{font-size:11px;color:var(--muted);font-weight:500}
           .grid{display:flex;flex-wrap:wrap;gap:14px}
-          .tile{width:calc(33.333% - 10px);background:var(--tile);border-radius:16px;padding:16px 10px 14px;
+          .tile{width:calc(33.333% - 10px);background:var(--tile);border:1px solid var(--tile-border);
+                border-radius:16px;padding:16px 10px 14px;
                 text-decoration:none;color:var(--text);display:flex;flex-direction:column;align-items:center;
                 box-shadow:var(--tile-shadow)}
           .badge{width:48px;height:48px;border-radius:14px;color:#fff;font-weight:800;font-size:22px;
@@ -131,7 +142,11 @@ enum SpeedDialPage {
         </style></head>
         <body>
           <div class="topbar"><span class="protected">🛡 Protected</span></div>
-          <h1>\(greeting)</h1>
+          <div class="hero">
+            <span class="monogram">M</span>
+            <span class="wordmark">Magdy</span>
+            <span class="search-pill">🔍 Search</span>
+          </div>
           <p class="note">\(escape(L.t("unlimited_note")))</p>
           <div class="qa-row">
           \(actions)
