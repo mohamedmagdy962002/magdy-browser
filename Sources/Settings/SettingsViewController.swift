@@ -7,14 +7,14 @@ final class SettingsViewController: UITableViewController {
         case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache
         case filterLists, customFilterLists, wallpaper, language, about
         case appLock, nightMode, searchEngine, vault, readingList, blockStats, theme, textZoom
-        case memorySaver, backup, forceZoom, homepage
+        case memorySaver, backup, forceZoom, homepage, quickSearch
     }
 
     private let sections: [(title: String, rows: [Row])] = [
         (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
         ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault, .memorySaver, .forceZoom, .backup]),
         ("Appearance", [.theme, .nightMode, .wallpaper, .textZoom]),
-        (L.t("language"), [.language, .searchEngine, .homepage, .readingList]),
+        (L.t("language"), [.language, .searchEngine, .quickSearch, .homepage, .readingList]),
         (L.t("about"), [.about])
     ]
 
@@ -23,6 +23,11 @@ final class SettingsViewController: UITableViewController {
         title = L.t("settings")
         // .value1 style so detailTextLabel actually exists (plain cells have nil).
         tableView.register(ValueCell.self, forCellReuseIdentifier: "cell")
+    }
+
+    convenience init() {
+        // MASTER reference: grouped white cards on the light canvas.
+        self.init(style: .insetGrouped)
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int {
@@ -35,6 +40,13 @@ final class SettingsViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         sections[section].title
+    }
+
+    override func tableView(_ tableView: UITableView, willDisplayHeaderView view: UIView, forSection section: Int) {
+        // MASTER reference: periwinkle section labels.
+        guard let header = view as? UITableViewHeaderFooterView else { return }
+        header.textLabel?.textColor = Theme.primary
+        header.textLabel?.font = Theme.headline(13, weight: .semibold)
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -94,6 +106,11 @@ final class SettingsViewController: UITableViewController {
             cell.textLabel?.text = "Search Engine"
             cell.accessoryType = .disclosureIndicator
             cell.detailTextLabel?.text = SearchEngine.displayName
+        case .quickSearch:
+            cell.textLabel?.text = "Quick Website Search"
+            cell.detailTextLabel?.text = "\"wiki cats\", \"yt cats\", \"a shoes\"…"
+            cell.detailTextLabel?.numberOfLines = 1
+            cell.accessoryView = makeSwitch(key: String.quickSearchEnabledKey, default: false)
         case .homepage:
             cell.textLabel?.text = "Homepage"
             cell.accessoryType = .disclosureIndicator

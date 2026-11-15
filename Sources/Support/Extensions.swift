@@ -30,12 +30,40 @@ extension String {
         let text = trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
 
-        if text.contains(" ") { return searchURL(for: text) }
+        if text.contains(" ") {
+            if let quick = Self.quickSearchURL(for: text) { return quick }
+            return searchURL(for: text)
+        }
         if let url = URL(string: text), let scheme = url.scheme, !scheme.isEmpty, url.host != nil {
             return url
         }
         if text.contains(".") { return URL(string: "https://\(text)") }
         return searchURL(for: text)
+    }
+
+    /// Quick Website Search: "wiki cats" searches Wikipedia, "yt cats" YouTube, etc.
+    /// Off by default so it never hijacks normal queries.
+    static let quickSearchEnabledKey = "magdy.quickSearch"
+
+    private static let quickSites: [String: String] = [
+        "wiki": "https://en.wikipedia.org/w/index.php?search=%@&fulltext=1",
+        "yt": "https://www.youtube.com/results?search_query=%@",
+        "a": "https://www.amazon.com/s?k=%@",
+        "az": "https://www.amazon.com/s?k=%@",
+        "tw": "https://x.com/search?q=%@",
+        "x": "https://x.com/search?q=%@",
+        "ig": "https://www.instagram.com/explore/tags/%@",
+        "g": "https://www.google.com/search?q=%@"
+    ]
+
+    private static func quickSearchURL(for text: String) -> URL? {
+        guard UserDefaults.standard.bool(forKey: quickSearchEnabledKey) else { return nil }
+        let parts = text.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        guard parts.count == 2, let template = quickSites[parts[0].lowercased()] else { return nil }
+        let query = parts[1]
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)?
+            .replacingOccurrences(of: "+", with: "%2B") ?? ""
+        return URL(string: template.replacingOccurrences(of: "%@", with: query))
     }
 
     private func searchURL(for query: String) -> URL? {
