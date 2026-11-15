@@ -10,6 +10,8 @@ final class VideoPlayerController: UIViewController {
     private let url: URL
     private let pageTitle: String
     private let cookies: [HTTPCookie]
+    /// True when playing a file already saved in Downloads.
+    private let isLocal: Bool
 
     private let player = AVPlayer()
     private var playerLayer: AVPlayerLayer!
@@ -40,10 +42,11 @@ final class VideoPlayerController: UIViewController {
     private var rate: Float = 1.0
     private var hideTimer: Timer?
 
-    init(url: URL, title: String, cookies: [HTTPCookie] = []) {
+    init(url: URL, title: String, cookies: [HTTPCookie] = [], isLocal: Bool = false) {
         self.url = url
         self.pageTitle = title
         self.cookies = cookies
+        self.isLocal = isLocal
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
     }
@@ -234,8 +237,17 @@ final class VideoPlayerController: UIViewController {
     }
 
     private func preparePlayer() {
-        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        let item = AVPlayerItem(url: url)
+        player.replaceCurrentItem(with: item)
         player.defaultRate = rate
+        // Local files resume where you left off.
+        if isLocal {
+            let saved = UserDefaults.standard.double(forKey: "magdy.playback.\(url.path)")
+            if saved > 5 {
+                item.seek(to: CMTime(seconds: saved, preferredTimescale: 600), completionHandler: nil)
+                toast("Resumed at \(Self.format(saved))")
+            }
+        }
         player.play()
 
         timeObserver = player.addPeriodicTimeObserver(
@@ -253,6 +265,10 @@ final class VideoPlayerController: UIViewController {
             }
             // Download % rides on the same tick (DownloadsViewController owns onChange).
             self.refreshDownloadPill()
+            // Remember playback position for local files.
+            if self.isLocal, time.seconds.isFinite {
+                UserDefaults.standard.set(time.seconds, forKey: "magdy.playback.\(self.url.path)")
+            }
         }
 
         if AVPictureInPictureController.isPictureInPictureSupported() {
@@ -353,6 +369,11 @@ final class VideoPlayerController: UIViewController {
 
     /// Aloha-style: start the download and show live progress on the pill.
     @objc private func downloadTapped() {
+        if isLocal {
+            let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            present(sheet, animated: true)
+            return
+        }
         let existing = DownloadManager.shared.items.first {
             $0.sourceURL?.absoluteString == url.absoluteString
         }
@@ -407,13 +428,17 @@ final class VideoPlayerController: UIViewController {
 
     @objc private func shareTapped() {
         let items: [Any]
-        let finished = DownloadManager.shared.items.first {
-            $0.sourceURL?.absoluteString == url.absoluteString && $0.state == .finished
-        }
-        if let finished, let localURL = finished.localURL {
-            items = [localURL]
+        if isLocal {
+            items = [url]
         } else {
-            items = ["\(pageTitle) — \(url.absoluteString)"]
+            let finished = DownloadManager.shared.items.first {
+                $0.sourceURL?.absoluteString == url.absoluteString && $0.state == .finished
+            }
+            if let finished, let localURL = finished.localURL {
+                items = [localURL]
+            } else {
+                items = ["\(pageTitle) — \(url.absoluteString)"]
+            }
         }
         let sheet = UIActivityViewController(activityItems: items, applicationActivities: nil)
         present(sheet, animated: true)
@@ -426,6 +451,11 @@ final class VideoPlayerController: UIViewController {
     }
 
     private func refreshDownloadPill() {
+        if isLocal {
+            downloadPill.setTitle("Saved ✓", for: .normal)
+            downloadPill.backgroundColor = UIColor(hex: 0x30D158)
+            return
+        }
         let item = DownloadManager.shared.items.first {
             $0.sourceURL?.absoluteString == url.absoluteString
         }

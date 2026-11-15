@@ -91,6 +91,13 @@ final class DownloadsViewController: UITableViewController, UISearchResultsUpdat
         tableView.deselectRow(at: indexPath, animated: true)
         let item = visibleItems[indexPath.row]
         guard item.state == .finished, let localURL = item.localURL else { return }
+        // Videos and audio play in the in-app player; everything else shares out.
+        let ext = localURL.pathExtension.lowercased()
+        if ["mp4", "mov", "m4v", "m4a", "mp3", "aac", "wav"].contains(ext) {
+            let player = VideoPlayerController(url: localURL, title: item.fileName, isLocal: true)
+            present(player, animated: true)
+            return
+        }
         let sheet = UIActivityViewController(activityItems: [localURL], applicationActivities: nil)
         sheet.popoverPresentationController?.sourceView = tableView.cellForRow(at: indexPath)
         present(sheet, animated: true)
