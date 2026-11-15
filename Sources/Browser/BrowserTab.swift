@@ -126,6 +126,20 @@ final class BrowserTab: NSObject {
         configuration.userContentController.addUserScript(source)
         configuration.userContentController.add(WeakScriptMessageProxy(target: self), name: "magdyVideo")
         configuration.userContentController.add(WeakScriptMessageProxy(target: self), name: "magdyAction")
+        // Force Zoom: rewrite the viewport so pinch-zoom works on pages that block it.
+        if UserDefaults.standard.bool(forKey: "magdy.forceZoom") {
+            let script = WKUserScript(
+                source: """
+                (function(){
+                  var m=document.querySelector('meta[name=viewport]');
+                  if(m){m.setAttribute('content','width=device-width, initial-scale=1, maximum-scale=10, minimum-scale=0.2, user-scalable=yes');}
+                })();
+                """,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+            configuration.userContentController.addUserScript(script)
+        }
 
         wireWebView()
         loadStartPage()

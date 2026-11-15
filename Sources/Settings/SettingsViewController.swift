@@ -7,12 +7,12 @@ final class SettingsViewController: UITableViewController {
         case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache
         case filterLists, customFilterLists, wallpaper, language, about
         case appLock, nightMode, searchEngine, vault, readingList, blockStats, theme, textZoom
-        case memorySaver, backup
+        case memorySaver, backup, forceZoom
     }
 
     private let sections: [(title: String, rows: [Row])] = [
         (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
-        ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault, .memorySaver, .backup]),
+        ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault, .memorySaver, .forceZoom, .backup]),
         ("Appearance", [.theme, .nightMode, .wallpaper, .textZoom]),
         (L.t("language"), [.language, .searchEngine, .readingList]),
         (L.t("about"), [.about])
@@ -107,6 +107,10 @@ final class SettingsViewController: UITableViewController {
         case .memorySaver:
             cell.textLabel?.text = "Memory Saver"
             cell.accessoryView = makeSwitch(key: "magdy.memorySaver", default: true)
+        case .forceZoom:
+            cell.textLabel?.text = "Force Zoom on Sites"
+            cell.detailTextLabel?.text = "Pinch-zoom on pages that block it"
+            cell.accessoryView = makeSwitch(key: "magdy.forceZoom", default: false)
         case .backup:
             cell.textLabel?.text = "Backup & Restore"
             cell.accessoryType = .disclosureIndicator
@@ -172,6 +176,16 @@ final class SettingsViewController: UITableViewController {
         UserDefaults.standard.set(sender.isOn, forKey: key)
         if key == "magdy.nightMode" {
             NotificationCenter.default.post(name: .magdyNightModeChanged, object: sender.isOn)
+        }
+        if key == "magdy.forceZoom" {
+            let alert = UIAlertController(
+                title: "Applies to new tabs",
+                message: "Force Zoom applies the next time you open a tab or reload a page.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
+            present(alert, animated: true)
+            return
         }
         guard key == UserDefaultsKey.blockAds || key == UserDefaultsKey.blockTrackers else { return }
 

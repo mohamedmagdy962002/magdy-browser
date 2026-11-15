@@ -1,44 +1,51 @@
-[
-  {
-    "id": "easylist",
-    "title": "Easylist",
-    "source": "https://easylist.to/easylist/easylist.txt",
-    "bytes": 2122146,
-    "domains": 43351
-  },
-  {
-    "id": "easyprivacy",
-    "title": "Easyprivacy",
-    "source": "https://easylist.to/easylist/easyprivacy.txt",
-    "bytes": 1573813,
-    "domains": 43412
-  },
-  {
-    "id": "easylist_germany",
-    "title": "Easylist Germany",
-    "source": "https://easylist.to/easylistgermany/easylistgermany.txt",
-    "bytes": 286378,
-    "domains": 71
-  },
-  {
-    "id": "fanboy_annoyance",
-    "title": "Fanboy Annoyance",
-    "source": "https://secure.fanboy.co.nz/fanboy-annoyance.txt",
-    "bytes": 2240629,
-    "domains": 237
-  },
-  {
-    "id": "fanboy_social",
-    "title": "Fanboy Social",
-    "source": "https://secure.fanboy.co.nz/fanboy-social.txt",
-    "bytes": 420947,
-    "domains": 0
-  },
-  {
-    "id": "peter_lowe",
-    "title": "Peter Lowe",
-    "source": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext",
-    "bytes": 74054,
-    "domains": 3562
-  }
+﻿[
+    {
+        "id":  "easylist",
+        "title":  "Easylist",
+        "source":  "https://easylist.to/easylist/easylist.txt",
+        "bytes":  2122146,
+        "domains":  43351
+    },
+    {
+        "id":  "easyprivacy",
+        "title":  "Easyprivacy",
+        "source":  "https://easylist.to/easylist/easyprivacy.txt",
+        "bytes":  1573813,
+        "domains":  43412
+    },
+    {
+        "id":  "easylist_germany",
+        "title":  "Easylist Germany",
+        "source":  "https://easylist.to/easylistgermany/easylistgermany.txt",
+        "bytes":  286378,
+        "domains":  71
+    },
+    {
+        "id":  "fanboy_annoyance",
+        "title":  "Fanboy Annoyance",
+        "source":  "https://secure.fanboy.co.nz/fanboy-annoyance.txt",
+        "bytes":  2240629,
+        "domains":  237
+    },
+    {
+        "id":  "fanboy_social",
+        "title":  "Fanboy Social",
+        "source":  "https://secure.fanboy.co.nz/fanboy-social.txt",
+        "bytes":  420947,
+        "domains":  0
+    },
+    {
+        "id":  "peter_lowe",
+        "title":  "Peter Lowe",
+        "source":  "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus\u0026showintro=0\u0026mimetype=plaintext",
+        "bytes":  74054,
+        "domains":  3562
+    },
+    {
+        "id":  "fanboy_cookiemonster",
+        "title":  "Cookie Banners",
+        "source":  "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt",
+        "bytes":  906528,
+        "domains":  695
+    }
 ]

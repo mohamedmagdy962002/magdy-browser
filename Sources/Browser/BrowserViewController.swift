@@ -1,5 +1,6 @@
 import UIKit
 import WebKit
+import CoreImage
 
 final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
@@ -315,6 +316,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let qr = UIAction(title: "Scan QR Code", image: UIImage(systemName: "qrcode.viewfinder")) { [weak self] _ in
             self?.openQRScanner()
         }
+        let shareQR = UIAction(title: "QR Code of This Page", image: UIImage(systemName: "qrcode")) { [weak self] _ in
+            self?.sharePageQRCode()
+        }
         let voice = UIAction(title: "Voice Search", image: UIImage(systemName: "mic")) { [weak self] _ in
             self?.openVoiceSearch()
         }
@@ -331,7 +335,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             tabsGrid, reopen, privateTab, favorite, readingList, media, downloader,
             reader, find, desktopSite, inSafari, copy, savePDF, screenshot,
             biggerText, smallerText, resetText, nightMode, translate,
-            qr, voice, clearSite, lockNow, closeAll
+            qr, shareQR, voice, clearSite, lockNow, closeAll
         ]
         // RSS/Atom feeds advertised by the current page.
         if let feeds = activeTab?.rssFeeds, !feeds.isEmpty {
@@ -434,6 +438,34 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     }
 
     // MARK: - Page tools
+
+    /// Generates a QR code image of the current page URL and opens the share sheet.
+    private func sharePageQRCode() {
+        guard let url = activeTab?.webView.url else { return }
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return }
+        filter.setValue(url.absoluteString.data(using: .utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return }
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(output, from: output.extent) else { return }
+        let scale: CGFloat = 8
+        let size = CGSize(width: cgImage.width * Int(scale), height: cgImage.height * Int(scale))
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { _ in
+            UIImage(cgImage: cgImage).draw(in: CGRect(origin: .zero, size: size))
+        }
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("magdy-qr-\(Int(Date().timeIntervalSince1970)).png")
+        guard let data = image.pngData() else { return }
+        do {
+            try data.write(to: file)
+        } catch {
+            return
+        }
+        let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+        sheet.popoverPresentationController?.sourceView = view
+        present(sheet, animated: true)
+    }
 
     private func toggleDesktopSite() {
         guard let tab = activeTab, let url = tab.webView.url else { return }
