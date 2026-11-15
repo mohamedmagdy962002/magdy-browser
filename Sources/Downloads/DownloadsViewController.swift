@@ -95,6 +95,7 @@ final class DownloadsViewController: UITableViewController, UISearchResultsUpdat
         let ext = localURL.pathExtension.lowercased()
         if ["mp4", "mov", "m4v", "m4a", "mp3", "aac", "wav"].contains(ext) {
             let player = VideoPlayerController(url: localURL, title: item.fileName, isLocal: true)
+            player.modalPresentationStyle = .fullScreen
             present(player, animated: true)
             return
         }

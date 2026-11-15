@@ -441,6 +441,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         // Site cookies ride along so authenticated streams download correctly.
         activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
             let player = VideoPlayerController(url: url, title: name, cookies: cookies)
+            player.modalPresentationStyle = .fullScreen
             self?.present(player, animated: true)
         }
     }

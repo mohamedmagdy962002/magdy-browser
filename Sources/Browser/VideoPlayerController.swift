@@ -36,11 +36,11 @@ final class VideoPlayerController: UIViewController {
     private let pipButton = UIButton(type: .system)
     private let speedButton = UIButton(type: .system)
     private let routePicker = AVRoutePickerView()
-
     private var timeObserver: Any?
     private var isScrubbing = false
     private var rate: Float
     private var hideTimer: Timer?
+    private var errorShown = false
 
     init(url: URL, title: String, cookies: [HTTPCookie] = [], isLocal: Bool = false) {
         self.url = url
@@ -98,6 +98,10 @@ final class VideoPlayerController: UIViewController {
         view.addGestureRecognizer(doubleTap)
         tap.require(toFail: doubleTap)
 
+        // Swipe down anywhere to close — a second way out besides the ✕.
+        let swipeDown = UIPanGestureRecognizer(target: self, action: #selector(swipeDownClose(_:)))
+        view.addGestureRecognizer(swipeDown)
+
         view.addSubview(chrome)
         chrome.translatesAutoresizingMaskIntoConstraints = false
 
@@ -112,6 +116,10 @@ final class VideoPlayerController: UIViewController {
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: systemName), for: .normal)
             button.tintColor = .white
+            // Translucent glass circle so buttons read over any video.
+            button.backgroundColor = UIColor(white: 0, alpha: 0.42)
+            button.layer.cornerRadius = 17
+            button.layer.cornerCurve = .continuous
             button.addTarget(self, action: selector, for: .touchUpInside)
             return button
         }
@@ -280,6 +288,11 @@ final class VideoPlayerController: UIViewController {
             }
             // Download % rides on the same tick (DownloadsViewController owns onChange).
             self.refreshDownloadPill()
+            // Surface stream failures (DRM / blob / 403) instead of a black screen.
+            if let error = self.player.currentItem?.error, !self.errorShown {
+                self.errorShown = true
+                self.toast("Stream error: \(error.localizedDescription). Try the Media Tools scanner.")
+            }
             // Remember playback position for local files.
             if self.isLocal, time.seconds.isFinite {
                 // Fully watched: reset so it starts from the top next time.
@@ -354,7 +367,30 @@ final class VideoPlayerController: UIViewController {
     }
 
     @objc private func closeTapped() {
-        dismiss(animated: true)
+        player.pause()
+        hideTimer?.invalidate()
+        // Belt and suspenders: dismissing self can no-op if the presentation
+        // state is unusual, so fall back to the presenter.
+        dismiss(animated: true, completion: nil)
+        presentingViewController?.dismiss(animated: true, completion: nil)
+    }
+
+    @objc private func swipeDownClose(_ gesture: UIPanGestureRecognizer) {
+        let down = gesture.translation(in: view).y
+        if gesture.state == .began {
+            gesture.view?.backgroundColor = .clear
+        }
+        if gesture.state == .changed, down > 0 {
+            // Drag the whole player down like a sheet.
+            view.transform = CGAffineTransform(translationX: 0, y: down)
+        }
+        if gesture.state == .ended {
+            if down > 130 {
+                closeTapped()
+            } else {
+                UIView.animate(withDuration: 0.25) { self.view.transform = .identity }
+            }
+        }
     }
 
     @objc private func scrubStarted() {
@@ -413,12 +449,9 @@ final class VideoPlayerController: UIViewController {
             presentSheet(UIActivityViewController(activityItems: [localURL], applicationActivities: nil))
             return
         }
-        if url.pathExtension.lowercased() == "m3u8" || url.absoluteString.contains(".m3u8") {
-            DownloadManager.shared.startHLS(url: url, referer: nil, cookies: cookies)
-        } else {
-            DownloadManager.shared.start(url: url, referer: nil, cookies: cookies)
-        }
-        toast("Downloading…")
+        DownloadOptionsSheet.present(
+            url: url, referer: nil, cookies: cookies, presenter: self
+        )
     }
 
     /// Pause / resume / cancel without leaving the player.

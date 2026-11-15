@@ -38,6 +38,9 @@ final class DownloadManager: NSObject {
 
     private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
 
+    /// Security-scoped bookmark of the user-chosen download folder (nil = app Downloads).
+    static let folderBookmarkKey = "magdy.downloadFolderBookmark"
+
     var directory: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dir = docs.appendingPathComponent("Downloads", isDirectory: true)
@@ -45,6 +48,46 @@ final class DownloadManager: NSObject {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         return dir
+    }
+
+    /// The folder new files land in: the user's chosen folder when reachable, else Downloads.
+    func folderDisplayName() -> String {
+        guard resolveCustomFolder() != nil else { return "Magdy Downloads" }
+        return customFolderName ?? "Magdy Downloads"
+    }
+
+    private var customFolderName: String? {
+        UserDefaults.standard.string(forKey: folderBookmarkKey + ".name")
+    }
+
+    /// Resolves the bookmarked folder; caller must balance startAccessingSecurityScopedResource.
+    private func resolveCustomFolder() -> URL? {
+        guard let data = UserDefaults.standard.data(forKey: folderBookmarkKey) else { return nil }
+        var stale = false
+        guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else {
+            return nil
+        }
+        url.startAccessingSecurityScopedResource()
+        return url
+    }
+
+    /// Moves a finished temp file to the chosen folder (or Downloads) with a unique name.
+    private func deliver(_ temp: URL, name: String) -> URL {
+        let fallback = directory.appendingPathComponent(uniqueName(name))
+        guard let folder = resolveCustomFolder() else {
+            return fallback
+        }
+        defer { folder.stopAccessingSecurityScopedResource() }
+        guard FileManager.default.isDirectory(atPath: folder.path) else { return fallback }
+        let target = folder.appendingPathComponent(uniqueName(name))
+        try? FileManager.default.removeItem(at: target)
+        do {
+            try FileManager.default.moveItem(at: temp, to: target)
+            return target
+        } catch {
+            try? FileManager.default.moveItem(at: temp, to: fallback)
+            return fallback
+        }
     }
 
     // MARK: - Public API
@@ -58,7 +101,7 @@ final class DownloadManager: NSObject {
     }
 
     /// Direct media link download (video/audio/file found on the page).
-    func start(url: URL, referer: URL?, cookies: [HTTPCookie]) {
+    func start(url: URL, referer: URL?, cookies: [HTTPCookie], fileName: String? = nil) {
         var request = URLRequest(url: url)
         if let referer {
             request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
@@ -73,7 +116,7 @@ final class DownloadManager: NSObject {
         }
 
         let item = DownloadItem()
-        item.fileName = uniqueName(url.lastPathComponent.isEmpty ? "download" : url.lastPathComponent)
+        item.fileName = uniqueName(fileName?.isEmpty == false ? fileName! : (url.lastPathComponent.isEmpty ? "download" : url.lastPathComponent))
         item.sourceURL = url
         item.state = .running
 
@@ -86,9 +129,9 @@ final class DownloadManager: NSObject {
     }
 
     /// HLS playlist download: all segments are fetched, merged and remuxed to .mp4.
-    func startHLS(url: URL, referer: URL?, cookies: [HTTPCookie]) {
+    func startHLS(url: URL, referer: URL?, cookies: [HTTPCookie], fileName: String? = nil) {
         let item = DownloadItem()
-        item.fileName = uniqueName(url.deletingPathExtension().lastPathComponent + ".mp4")
+        item.fileName = uniqueName(fileName?.isEmpty == false ? fileName! : (url.deletingPathExtension().lastPathComponent + ".mp4"))
         item.sourceURL = url
         item.state = .running
         hlsItems[item.id] = item
@@ -105,15 +148,11 @@ final class DownloadManager: NSObject {
                 guard let self else { return }
                 switch result {
                 case .success(let fileURL):
-                    let destination = self.directory.appendingPathComponent(self.uniqueName(item.fileName))
-                    try? FileManager.default.removeItem(at: destination)
-                    do {
-                        try FileManager.default.moveItem(at: fileURL, to: destination)
-                        item.localURL = destination
-                        item.fileName = destination.lastPathComponent
-                    } catch {
-                        item.localURL = fileURL
-                    }
+                    let base = (item.fileName as NSString).pathExtension.isEmpty
+                        ? item.fileName + ".mp4" : item.fileName
+                    let destination = self.deliver(fileURL, name: base)
+                    item.localURL = destination
+                    item.fileName = destination.lastPathComponent
                     item.state = .finished
                     item.progress = 1
                 case .failure(let error):
@@ -308,18 +347,11 @@ extension DownloadManager: URLSessionDownloadDelegate {
         taskItems.removeValue(forKey: downloadTask.taskIdentifier)
         // Resolve the name now — two concurrent same-name downloads would
         // otherwise both be told the same destination.
-        let destination = directory.appendingPathComponent(uniqueName(item.fileName))
-        try? FileManager.default.removeItem(at: destination)
-        do {
-            try FileManager.default.moveItem(at: location, to: destination)
-            item.localURL = destination
-            item.fileName = destination.lastPathComponent
-            item.state = .finished
-            item.progress = 1
-        } catch {
-            item.state = .failed
-            item.errorMessage = error.localizedDescription
-        }
+        let destination = deliver(location, name: item.fileName)
+        item.localURL = destination
+        item.fileName = destination.lastPathComponent
+        item.state = .finished
+        item.progress = 1
         notify()
     }
 

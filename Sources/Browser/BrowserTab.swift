@@ -114,7 +114,26 @@ final class BrowserTab: NSObject {
             v.setAttribute('playsinline', '');
             v.setAttribute('webkit-playsinline', '');
           }
+          function ensurePill() {
+            if (document.getElementById('magdyPlayerPill')) return;
+            if (!document.querySelector('video')) return;
+            var btn = document.createElement('button');
+            btn.id = 'magdyPlayerPill';
+            btn.textContent = '▶ Player';
+            btn.style.cssText = 'position:fixed;bottom:76px;right:14px;z-index:2147483647;padding:10px 16px;border:none;border-radius:22px;background:linear-gradient(135deg,#8B5CF6,#A78BFA);color:#fff;font:600 13px -apple-system;box-shadow:0 6px 18px rgba(0,0,0,.35);';
+            btn.addEventListener('click', function (ev) {
+              ev.preventDefault();
+              ev.stopPropagation();
+              var v = document.querySelector('video');
+              var src = v ? (v.currentSrc || v.src || (v.querySelector('source') && v.querySelector('source').src) || '') : '';
+              if (src && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.magdyVideo) {
+                window.webkit.messageHandlers.magdyVideo.postMessage({ url: src, title: document.title || '' });
+              }
+            });
+            document.documentElement.appendChild(btn);
+          }
           document.querySelectorAll('video').forEach(forceInline);
+          ensurePill();
           new MutationObserver(function (mutations) {
             mutations.forEach(function (m) {
               m.addedNodes.forEach(function (n) {
@@ -122,6 +141,7 @@ final class BrowserTab: NSObject {
                 if (n.querySelectorAll) n.querySelectorAll('video').forEach(forceInline);
               });
             });
+            ensurePill();
           }).observe(document.documentElement, { childList: true, subtree: true });
           document.addEventListener('click', function (event) {
             const target = event.target;
@@ -448,7 +468,12 @@ extension BrowserTab: WKUIDelegate {
                 UIAction(title: "Download", image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
                     guard let self else { return }
                     self.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                        DownloadManager.shared.start(url: url, referer: self.webView.url, cookies: cookies)
+                        DispatchQueue.main.async {
+                            DownloadOptionsSheet.present(
+                                url: url, referer: self.webView.url, cookies: cookies,
+                                presenter: self.presentingViewController() ?? self
+                            )
+                        }
                     }
                 }
             ])

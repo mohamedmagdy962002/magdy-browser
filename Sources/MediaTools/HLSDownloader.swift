@@ -24,6 +24,48 @@ enum HLSDownloader {
         let bandwidth: Double
     }
 
+    /// A selectable HLS quality (parsed from a master playlist).
+    struct VariantOption {
+        let label: String
+        let url: URL
+    }
+
+    /// Lists the qualities of a master playlist, highest resolution first.
+    /// Empty result = media playlist (single quality).
+    static func variants(playlist url: URL, cookies: [HTTPCookie], completion: @escaping ([VariantOption]) -> Void) {
+        fetchText(url, cookies: cookies) { result in
+            switch result {
+            case .failure, .success(let text) where !text.contains("#EXT-X-STREAM-INF"):
+                completion([])
+            case .success(let text):
+                var options: [VariantOption] = []
+                let lines = text.components(separatedBy: .newlines)
+                for (index, line) in lines.enumerated() where line.contains("#EXT-X-STREAM-INF") {
+                    guard index + 1 < lines.count else { continue }
+                    let candidate = lines[index + 1].trimmingCharacters(in: .whitespaces)
+                    guard !candidate.isEmpty, !candidate.hasPrefix("#"),
+                          let resolved = URL(string: candidate, relativeTo: url)?.absoluteURL else { continue }
+                    let height = Double(
+                        line.split(separator: ",")
+                            .first { $0.hasPrefix("RESOLUTION=") }?
+                            .replacingOccurrences(of: "RESOLUTION=", with: "")
+                            .split(separator: "x").last.map(String.init) ?? ""
+                    ) ?? 0
+                    let bandwidth = Double(
+                        line.split(separator: ",")
+                            .first { $0.hasPrefix("BANDWIDTH=") }?
+                            .replacingOccurrences(of: "BANDWIDTH=", with: "") ?? "0"
+                    ) ?? 0
+                    let label = height > 0
+                        ? "\(Int(height))p"
+                        : String(format: "%.1f Mbps", bandwidth / 1_000_000)
+                    options.append(VariantOption(label: label, url: resolved))
+                }
+                completion(options)
+            }
+        }
+    }
+
     static func download(
         playlist url: URL,
         cookies: [HTTPCookie],
