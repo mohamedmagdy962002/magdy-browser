@@ -68,7 +68,10 @@ final class VideoPlayerController: UIViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        if let timeObserver { player.removeTimeObserver(timeObserver) }
+        if let timeObserver {
+            player.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
+        }
         player.pause()
     }
 
@@ -396,20 +399,18 @@ final class VideoPlayerController: UIViewController {
     /// Aloha-style: start the download and show live progress on the pill.
     @objc private func downloadTapped() {
         if isLocal {
-            let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-            present(sheet, animated: true)
+            presentSheet(UIActivityViewController(activityItems: [url], applicationActivities: nil))
             return
         }
         let existing = DownloadManager.shared.items.first {
             $0.sourceURL?.absoluteString == url.absoluteString
         }
-        if let existing, existing.state == .running || existing.state == .paused {
+        if let existing, [.running, .paused, .queued].contains(existing.state) {
             showDownloadMenu(for: existing)
             return
         }
         if let existing, existing.state == .finished, let localURL = existing.localURL {
-            let sheet = UIActivityViewController(activityItems: [localURL], applicationActivities: nil)
-            present(sheet, animated: true)
+            presentSheet(UIActivityViewController(activityItems: [localURL], applicationActivities: nil))
             return
         }
         if url.pathExtension.lowercased() == "m3u8" || url.absoluteString.contains(".m3u8") {
@@ -487,6 +488,15 @@ final class VideoPlayerController: UIViewController {
             }
         }
         let sheet = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        presentSheet(sheet)
+    }
+
+    /// Activity sheet with an iPad-safe popover anchor.
+    private func presentSheet(_ sheet: UIActivityViewController) {
+        sheet.popoverPresentationController?.sourceView = view
+        sheet.popoverPresentationController?.sourceRect = CGRect(
+            x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1
+        )
         present(sheet, animated: true)
     }
 
