@@ -103,15 +103,32 @@ final class BrowserTab: NSObject {
             uniquingKeysWith: { first, _ in first }
         )
 
-        // Tapping a video on the page opens the in-app player.
+        // Tapping a video on the page opens the in-app player instead of the
+        // native fullscreen player. Also forces playsinline on every video —
+        // without it iPhone plays fullscreen natively and ignores our hook.
         let videoHook = """
         (function () {
           if (window.__magdyVideoHook) return;
           window.__magdyVideoHook = true;
+          function forceInline(v) {
+            v.setAttribute('playsinline', '');
+            v.setAttribute('webkit-playsinline', '');
+          }
+          document.querySelectorAll('video').forEach(forceInline);
+          new MutationObserver(function (mutations) {
+            mutations.forEach(function (m) {
+              m.addedNodes.forEach(function (n) {
+                if (n.tagName === 'VIDEO') forceInline(n);
+                if (n.querySelectorAll) n.querySelectorAll('video').forEach(forceInline);
+              });
+            });
+          }).observe(document.documentElement, { childList: true, subtree: true });
           document.addEventListener('click', function (event) {
             const target = event.target;
             const video = target && target.tagName === 'VIDEO' ? target : null;
             if (!video) return;
+            event.preventDefault();
+            event.stopPropagation();
             const src = video.currentSrc || video.src || '';
             if (!src) return;
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.magdyVideo) {
