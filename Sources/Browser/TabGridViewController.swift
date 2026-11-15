@@ -10,6 +10,8 @@ final class TabGridViewController: UICollectionViewController {
     }
 
     private let store: TabStore
+    /// Highlighted card (violet border) — the browser's current tab.
+    weak var activeTab: BrowserTab?
     private let onActivate: (BrowserTab) -> Void
     private let onNewTab: () -> Void
     private let onReopen: (ClosedTab) -> Void
@@ -23,12 +25,14 @@ final class TabGridViewController: UICollectionViewController {
 
     init(
         store: TabStore,
+        activeTab: BrowserTab?,
         onActivate: @escaping (BrowserTab) -> Void,
         onNewTab: @escaping () -> Void,
         onReopen: @escaping (ClosedTab) -> Void,
         onClosed: @escaping (BrowserTab) -> Void
     ) {
         self.store = store
+        self.activeTab = activeTab
         self.onActivate = onActivate
         self.onNewTab = onNewTab
         self.onReopen = onReopen
@@ -85,6 +89,10 @@ final class TabGridViewController: UICollectionViewController {
         cell.titleLabel.text = tab.title
         cell.hostLabel.text = tab.displayURL?.host ?? "Start page"
         cell.setPrivate(tab.isPrivate)
+        // Violet border marks the browser's current tab.
+        let isActive = tab === activeTab
+        cell.layer.borderWidth = isActive ? 2 : 0
+        cell.layer.borderColor = isActive ? Theme.primary.cgColor : nil
         tab.webView.takeSnapshot(with: nil) { image, _ in
             if let image, collectionView.cellForItem(at: indexPath) === cell {
                 cell.snapshotView.image = image

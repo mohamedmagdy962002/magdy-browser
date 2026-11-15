@@ -16,6 +16,8 @@ final class BrowserTab: NSObject {
     var onVideoTapped: ((URL, String) -> Void)?
     /// Long-pressed a link → (url, wants private tab).
     var onOpenLink: ((URL, Bool) -> Void)?
+    /// Start-page quick action button: "private" | "qr" | "voice" | "downloads".
+    var onQuickAction: ((String) -> Void)?
 
     /// Memory Saver: true while the page is released and will reload on activation.
     private(set) var isHibernated = false
@@ -123,6 +125,7 @@ final class BrowserTab: NSObject {
         let source = WKUserScript(source: videoHook, injectionTime: .atDocumentEnd, forMainFrameOnly: false)
         configuration.userContentController.addUserScript(source)
         configuration.userContentController.add(WeakScriptMessageProxy(target: self), name: "magdyVideo")
+        configuration.userContentController.add(WeakScriptMessageProxy(target: self), name: "magdyAction")
 
         wireWebView()
         loadStartPage()
@@ -515,6 +518,12 @@ extension BrowserTab: WKScriptMessageHandler {
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
+        if message.name == "magdyAction", let action = message.body as? String {
+            DispatchQueue.main.async { [weak self] in
+                self?.onQuickAction?(action)
+            }
+            return
+        }
         guard message.name == "magdyVideo",
               let payload = message.body as? [String: Any],
               let urlString = payload["url"] as? String,

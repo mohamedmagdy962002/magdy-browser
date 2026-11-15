@@ -155,6 +155,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         omnibox.backgroundColor = Theme.card
         omnibox.layer.cornerRadius = Theme.corner
         omnibox.layer.cornerCurve = .continuous
+        omnibox.layer.borderWidth = 1
+        omnibox.layer.borderColor = Theme.hairline.cgColor
         omnibox.translatesAutoresizingMaskIntoConstraints = false
         Theme.floatingShadow(omnibox)
 
@@ -162,6 +164,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         toolbarChrome.backgroundColor = Theme.glass
         toolbarChrome.layer.cornerRadius = 26
         toolbarChrome.layer.cornerCurve = .continuous
+        toolbarChrome.layer.borderWidth = 1
+        toolbarChrome.layer.borderColor = Theme.hairline.cgColor
         toolbarChrome.translatesAutoresizingMaskIntoConstraints = false
         Theme.floatingShadow(toolbarChrome)
 
@@ -526,6 +530,18 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         tab.onOpenLink = { [weak self] url, privateMode in
             self?.open(url: url, privateMode: privateMode)
         }
+        tab.onQuickAction = { [weak self] action in
+            guard let self else { return }
+            switch action {
+            case "private": self.openNewTab(privateMode: true)
+            case "qr": self.openQRScanner()
+            case "voice": self.openVoiceSearch()
+            case "downloads":
+                let downloads = UINavigationController(rootViewController: DownloadsViewController())
+                self.present(downloads, animated: true)
+            default: break
+            }
+        }
 
         // Pull-to-refresh.
         let refresh = UIRefreshControl()
@@ -637,6 +653,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private func openTabGrid() {
         let grid = TabGridViewController(
             store: store,
+            activeTab: activeTab,
             onActivate: { [weak self] tab in self?.activate(tab) },
             onNewTab: { [weak self] in
                 self?.openNewTab(privateMode: UserDefaultsKey.bool(UserDefaultsKey.defaultPrivate, default: false))
