@@ -18,7 +18,7 @@ final class BrowserTab: NSObject {
     /// Memory Saver: true while the page is released and will reload on activation.
     private(set) var isHibernated = false
     private var hibernatedURL: URL?
-    private(set) var lastActivatedAt = Date()
+    var lastActivatedAt = Date()
     /// RSS/Atom feeds advertised by the current page (set on finish loading).
     private(set) var rssFeeds: [String] = []
 
@@ -186,6 +186,8 @@ final class BrowserTab: NSObject {
 extension BrowserTab: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         onLoadingChange?(self, true)
+        // Old page's feeds must not leak into the new one's menu.
+        rssFeeds = []
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -223,11 +225,6 @@ extension BrowserTab: WKNavigationDelegate {
                   let feeds = try? JSONDecoder().decode([String].self, from: data) else { return }
             self.rssFeeds = feeds
         }
-    }
-
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        // Old page's feeds must not leak into the new one's menu.
-        rssFeeds = []
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
