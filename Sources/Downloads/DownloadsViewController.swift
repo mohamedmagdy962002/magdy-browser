@@ -1,8 +1,12 @@
 import UIKit
 
-final class DownloadsViewController: UITableViewController {
+final class DownloadsViewController: UITableViewController, UISearchResultsUpdating {
     private let manager = DownloadManager.shared
     private var items: [DownloadItem] = []
+    private var searchController: UISearchController!
+    /// Nil = all; non-nil = filtered by the search field.
+    private var filtered: [DownloadItem]?
+    private var visibleItems: [DownloadItem] { filtered ?? items }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -18,12 +22,26 @@ final class DownloadsViewController: UITableViewController {
             target: self,
             action: #selector(clearFinished)
         )
+        searchController = UISearchController(searchResultsController: nil)
+        searchController.searchResultsUpdater = self
+        searchController.obscuresBackgroundDuringPresentation = false
+        searchController.searchBar.placeholder = "Search downloads"
+        navigationItem.searchController = searchController
+        navigationItem.hidesSearchBarWhenScrolling = false
+        definesPresentationContext = true
         manager.onChange = { [weak self] in self?.reload() }
         reload()
     }
 
     private func reload() {
         items = manager.items
+        updateSearchResults(for: searchController)
+        tableView.reloadData()
+    }
+
+    func updateSearchResults(for searchController: UISearchController) {
+        let text = (searchController.searchBar.text ?? "").lowercased()
+        filtered = text.isEmpty ? nil : items.filter { $0.fileName.lowercased().contains(text) }
         tableView.reloadData()
     }
 
@@ -32,12 +50,12 @@ final class DownloadsViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        items.count
+        visibleItems.count
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
-        let item = items[indexPath.row]
+        let item = visibleItems[indexPath.row]
 
         cell.backgroundColor = Theme.card
         cell.layer.cornerRadius = Theme.corner
@@ -71,7 +89,7 @@ final class DownloadsViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let item = items[indexPath.row]
+        let item = visibleItems[indexPath.row]
         guard item.state == .finished, let localURL = item.localURL else { return }
         let sheet = UIActivityViewController(activityItems: [localURL], applicationActivities: nil)
         sheet.popoverPresentationController?.sourceView = tableView.cellForRow(at: indexPath)
@@ -82,7 +100,7 @@ final class DownloadsViewController: UITableViewController {
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        let item = items[indexPath.row]
+        let item = visibleItems[indexPath.row]
         let delete = UIContextualAction(style: .destructive, title: "Delete") { _, _, completion in
             self.manager.remove(item)
             completion(true)

@@ -279,6 +279,15 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let screenshot = UIAction(title: "Full Page Screenshot", image: UIImage(systemName: "camera.viewfinder")) { [weak self] _ in
             self?.fullPageScreenshot()
         }
+        let biggerText = UIAction(title: "Bigger Text", image: UIImage(systemName: "textformat.size.larger")) { [weak self] _ in
+            self?.adjustSiteZoom(delta: 20)
+        }
+        let smallerText = UIAction(title: "Smaller Text", image: UIImage(systemName: "textformat.size.smaller")) { [weak self] _ in
+            self?.adjustSiteZoom(delta: -20)
+        }
+        let resetText = UIAction(title: "Reset Text Size", image: UIImage(systemName: "textformat.size")) { [weak self] _ in
+            self?.adjustSiteZoom(delta: nil)
+        }
         let clearSite = UIAction(
             title: "Clear Data for This Site",
             image: UIImage(systemName: "shield.slash"),
@@ -320,7 +329,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         }
         var children: [UIMenuElement] = [
             tabsGrid, reopen, privateTab, favorite, readingList, media, downloader,
-            reader, find, desktopSite, inSafari, copy, savePDF, screenshot, nightMode, translate,
+            reader, find, desktopSite, inSafari, copy, savePDF, screenshot,
+            biggerText, smallerText, resetText, nightMode, translate,
             qr, voice, clearSite, lockNow, closeAll
         ]
         // RSS/Atom feeds advertised by the current page.
@@ -367,6 +377,15 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
             self?.present(alert, animated: true)
         }
+    }
+
+    /// Per-site text zoom: steps ±20% (clamped 50–200), or resets to the global setting when delta is nil.
+    private func adjustSiteZoom(delta: Double?) {
+        guard let tab = activeTab, let host = tab.webView.url?.host else { return }
+        let current = tab.effectiveTextZoom()
+        let newZoom = delta.map { min(200, max(50, current + $0)) }
+        BrowserTab.setSiteZoom(newZoom == UserDefaults.standard.object(forKey: BrowserTab.textZoomKey) as? Double ? nil : newZoom, for: host)
+        tab.applyTextZoomIfNeeded()
     }
 
     /// Clears cookies, storage and cache belonging to the current site's domain.

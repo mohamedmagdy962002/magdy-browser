@@ -478,14 +478,34 @@ extension BrowserTab {
         applyTextZoomIfNeeded()
     }
 
-    /// Applies the global text zoom (50–200%) chosen in settings.
+    /// Applies the page's text zoom: per-site choice wins over the global setting.
     func applyTextZoomIfNeeded() {
-        let zoom = UserDefaults.standard.object(forKey: BrowserTab.textZoomKey) as? Double ?? 100
+        let zoom = effectiveTextZoom()
         guard zoom != 100 else { return }
         webView.evaluateJavaScript(
             "document.body.style.webkitTextSizeAdjust='\(Int(zoom))%';",
             completionHandler: nil
         )
+    }
+
+    /// Effective zoom (50–200%): per-site override, else the global setting.
+    func effectiveTextZoom() -> Double {
+        if let host = webView.url?.host {
+            let perSite = UserDefaults.standard.dictionary(forKey: "magdy.zoomPerSite") as? [String: Double] ?? [:]
+            if let site = perSite[host] { return site }
+        }
+        return UserDefaults.standard.object(forKey: BrowserTab.textZoomKey) as? Double ?? 100
+    }
+
+    /// Remembers (or clears, when nil) a per-host zoom.
+    static func setSiteZoom(_ zoom: Double?, for host: String) {
+        var perSite = UserDefaults.standard.dictionary(forKey: "magdy.zoomPerSite") as? [String: Double] ?? [:]
+        if let zoom {
+            perSite[host] = zoom
+        } else {
+            perSite.removeValue(forKey: host)
+        }
+        UserDefaults.standard.set(perSite, forKey: "magdy.zoomPerSite")
     }
 
     static let textZoomKey = "magdy.textZoom"
