@@ -57,12 +57,12 @@ final class DownloadManager: NSObject {
     }
 
     private var customFolderName: String? {
-        UserDefaults.standard.string(forKey: folderBookmarkKey + ".name")
+        UserDefaults.standard.string(forKey: Self.folderBookmarkKey + ".name")
     }
 
     /// Resolves the bookmarked folder; caller must balance startAccessingSecurityScopedResource.
     private func resolveCustomFolder() -> URL? {
-        guard let data = UserDefaults.standard.data(forKey: folderBookmarkKey) else { return nil }
+        guard let data = UserDefaults.standard.data(forKey: Self.folderBookmarkKey) else { return nil }
         var stale = false
         guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else {
             return nil
@@ -78,7 +78,10 @@ final class DownloadManager: NSObject {
             return fallback
         }
         defer { folder.stopAccessingSecurityScopedResource() }
-        guard FileManager.default.isDirectory(atPath: folder.path) else { return fallback }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDir), isDir.boolValue else {
+            return fallback
+        }
         let target = folder.appendingPathComponent(uniqueName(name))
         try? FileManager.default.removeItem(at: target)
         do {
@@ -228,6 +231,7 @@ final class DownloadManager: NSObject {
     private func notify() {
         DispatchQueue.main.async { [weak self] in
             self?.onChange?()
+            NotificationCenter.default.post(name: .magdyDownloadsChanged, object: nil)
         }
     }
 
@@ -319,6 +323,10 @@ extension DownloadManager: WKDownloadDelegate {
 }
 
 // MARK: - URLSession (direct media links)
+
+extension Notification.Name {
+    static let magdyDownloadsChanged = Notification.Name("magdyDownloadsChanged")
+}
 
 extension DownloadManager: URLSessionDownloadDelegate {
     func urlSession(

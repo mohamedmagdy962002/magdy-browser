@@ -13,7 +13,9 @@ final class VideoPlayerController: UIViewController {
     /// True when playing a file already saved in Downloads.
     private let isLocal: Bool
 
-    private let player = AVPlayer()
+    /// Reuses the session player so audio keeps playing seamlessly when the
+    /// fullscreen UI is reopened from the "Video is playing" banner.
+    private let player: AVPlayer
     private var playerLayer: AVPlayerLayer!
     private var pipController: AVPictureInPictureController?
 
@@ -42,11 +44,12 @@ final class VideoPlayerController: UIViewController {
     private var hideTimer: Timer?
     private var errorShown = false
 
-    init(url: URL, title: String, cookies: [HTTPCookie] = [], isLocal: Bool = false) {
+    init(url: URL, title: String, cookies: [HTTPCookie] = [], isLocal: Bool = false, existingPlayer: AVPlayer? = nil) {
         self.url = url
         self.pageTitle = title
         self.cookies = cookies
         self.isLocal = isLocal
+        self.player = existingPlayer ?? AVPlayer()
         // Speed choice sticks across sessions.
         let saved = UserDefaults.standard.object(forKey: "magdy.playerRate") as? Float ?? 1.0
         rate = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0].contains(saved) ? saved : 1.0
@@ -116,10 +119,6 @@ final class VideoPlayerController: UIViewController {
             let button = UIButton(type: .system)
             button.setImage(UIImage(systemName: systemName), for: .normal)
             button.tintColor = .white
-            // Translucent glass circle so buttons read over any video.
-            button.backgroundColor = UIColor(white: 0, alpha: 0.42)
-            button.layer.cornerRadius = 17
-            button.layer.cornerCurve = .continuous
             button.addTarget(self, action: selector, for: .touchUpInside)
             return button
         }
@@ -135,6 +134,12 @@ final class VideoPlayerController: UIViewController {
         titleStack.alignment = .top
         titleStack.spacing = 12
         titleStack.translatesAutoresizingMaskIntoConstraints = false
+        // Aloha reference: one glass pill holding ✕ · title · share.
+        titleStack.backgroundColor = UIColor(white: 0, alpha: 0.42)
+        titleStack.layer.cornerRadius = 18
+        titleStack.layer.cornerCurve = .continuous
+        titleStack.isLayoutMarginsRelativeArrangement = true
+        titleStack.layoutMargins = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
         topBar.addSubview(titleStack)
         chrome.addSubview(topBar)
         topBar.translatesAutoresizingMaskIntoConstraints = false
@@ -186,14 +191,19 @@ final class VideoPlayerController: UIViewController {
         timeRow.spacing = 10
         timeRow.alignment = .center
 
-        // Download pill: violet, shows live % while downloading.
-        downloadPill.setTitle("Download", for: .normal)
-        downloadPill.setTitleColor(.white, for: .normal)
-        downloadPill.titleLabel?.font = Theme.headline(13, weight: .semibold)
-        downloadPill.backgroundColor = Theme.primary
-        downloadPill.layer.cornerRadius = 14
-        downloadPill.layer.cornerCurve = .continuous
-        downloadPill.contentEdgeInsets = UIEdgeInsets(top: 9, left: 16, bottom: 9, right: 16)
+        // Download pill: violet, icon with live % text under it (Aloha ref row).
+        var pillConfig = UIButton.Configuration.plain()
+        pillConfig.image = UIImage(systemName: "arrow.down")
+        pillConfig.imagePlacement = .top
+        pillConfig.imagePadding = 3
+        pillConfig.title = "Download"
+        pillConfig.baseForegroundColor = .white
+        pillConfig.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
+            var outgoing = incoming
+            outgoing.font = Theme.body(11, weight: .semibold)
+            return outgoing
+        }
+        downloadPill.configuration = pillConfig
         downloadPill.addTarget(self, action: #selector(downloadTapped), for: .touchUpInside)
 
         pipButton.setImage(UIImage(systemName: "pip.enter"), for: .normal)
@@ -210,12 +220,30 @@ final class VideoPlayerController: UIViewController {
         routePicker.activeTintColor = Theme.primary
         routePicker.prioritizesVideoDevices = true
 
+        // ⋯ opens pause/resume/cancel for a running download, or the options sheet.
+        let moreButton = UIButton(type: .system)
+        moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+        moreButton.tintColor = .white
+        moreButton.showsMenuAsPrimaryAction = true
+        moreButton.menu = UIMenu(children: [
+            UIAction(title: "Download Options…", image: UIImage(systemName: "slider.horizontal.3")) { [weak self] _ in
+                guard let self else { return }
+                DownloadOptionsSheet.present(url: self.url, referer: nil, cookies: self.cookies, presenter: self)
+            },
+            UIAction(title: "Save Current Frame", image: UIImage(systemName: "camera.viewfinder")) { [weak self] _ in
+                self?.grabFrameTapped()
+            },
+            UIAction(title: "Share", image: UIImage(systemName: "square.and.arrow.up")) { [weak self] _ in
+                self?.shareTapped()
+            }
+        ])
+
         let actionRow = UIStackView(arrangedSubviews: [
-            downloadPill, UIView(), pipButton, speedButton, routePicker
+            downloadPill, pipButton, speedButton, routePicker, moreButton
         ])
         actionRow.axis = .horizontal
         actionRow.alignment = .center
-        actionRow.spacing = 16
+        actionRow.distribution = .equalSpacing
 
         let cardStack = UIStackView(arrangedSubviews: [timeRow, actionRow])
         cardStack.axis = .vertical
@@ -260,8 +288,14 @@ final class VideoPlayerController: UIViewController {
         // Audio keeps playing over the lock screen and other apps' music.
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
-        let item = AVPlayerItem(url: url)
-        player.replaceCurrentItem(with: item)
+        let item: AVPlayerItem
+        if existingPlayer != nil, player.currentItem != nil {
+            // Session player reopened from the banner — keep playing seamlessly.
+            item = player.currentItem!
+        } else {
+            item = AVPlayerItem(url: url)
+            player.replaceCurrentItem(with: item)
+        }
         player.defaultRate = rate
         // Local files resume where you left off.
         if isLocal {
@@ -367,8 +401,13 @@ final class VideoPlayerController: UIViewController {
     }
 
     @objc private func closeTapped() {
-        player.pause()
         hideTimer?.invalidate()
+        if !isLocal && player.timeControlStatus == .playing {
+            // Keep audio going; the browser shows the "Video is playing" banner.
+            PlayerSession.shared.adopt(player, url: url, title: pageTitle, cookies: cookies)
+        } else {
+            player.pause()
+        }
         // Belt and suspenders: dismissing self can no-op if the presentation
         // state is unusual, so fall back to the presenter.
         dismiss(animated: true, completion: nil)
@@ -540,9 +579,14 @@ final class VideoPlayerController: UIViewController {
     }
 
     private func refreshDownloadPill() {
+        func pill(_ title: String, color: UIColor) {
+            var config = downloadPill.configuration
+            config?.title = title
+            config?.baseForegroundColor = color
+            downloadPill.configuration = config
+        }
         if isLocal {
-            downloadPill.setTitle("Saved ✓", for: .normal)
-            downloadPill.backgroundColor = UIColor(hex: 0x30D158)
+            pill("Saved ✓", color: UIColor(hex: 0x30D158))
             return
         }
         let item = DownloadManager.shared.items.first {
@@ -551,19 +595,15 @@ final class VideoPlayerController: UIViewController {
         switch item?.state {
         case .running:
             let percent = Int((item?.progress ?? 0) * 100)
-            downloadPill.setTitle(percent > 0 ? "\(percent)%" : "…", for: .normal)
-            downloadPill.backgroundColor = Theme.primary.withAlphaComponent(0.55)
+            pill(percent > 0 ? "\(percent)%" : "…", color: .white)
         case .finished:
-            downloadPill.setTitle("Saved ✓", for: .normal)
-            downloadPill.backgroundColor = UIColor(hex: 0x30D158)
+            pill("Saved ✓", color: UIColor(hex: 0x30D158))
         case .failed, .cancelled:
-            downloadPill.setTitle("Retry", for: .normal)
-            downloadPill.backgroundColor = Theme.primary
+            pill("Retry", color: UIColor(hex: 0xFF9F0A))
         case .paused:
-            downloadPill.setTitle("Paused", for: .normal)
-            downloadPill.backgroundColor = UIColor(hex: 0xFF9F0A)
+            pill("Paused", color: UIColor(hex: 0xFF9F0A))
         default:
-            break
+            pill("Download", color: .white)
         }
     }
 

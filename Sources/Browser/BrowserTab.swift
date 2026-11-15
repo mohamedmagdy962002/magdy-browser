@@ -469,9 +469,10 @@ extension BrowserTab: WKUIDelegate {
                     guard let self else { return }
                     self.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
                         DispatchQueue.main.async {
+                            guard let presenter = self.presentingViewController() else { return }
                             DownloadOptionsSheet.present(
                                 url: url, referer: self.webView.url, cookies: cookies,
-                                presenter: self.presentingViewController() ?? self
+                                presenter: presenter
                             )
                         }
                     }

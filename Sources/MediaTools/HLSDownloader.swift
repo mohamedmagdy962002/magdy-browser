@@ -35,9 +35,13 @@ enum HLSDownloader {
     static func variants(playlist url: URL, cookies: [HTTPCookie], completion: @escaping ([VariantOption]) -> Void) {
         fetchText(url, cookies: cookies) { result in
             switch result {
-            case .failure, .success(let text) where !text.contains("#EXT-X-STREAM-INF"):
+            case .failure:
                 completion([])
             case .success(let text):
+                guard text.contains("#EXT-X-STREAM-INF") else {
+                    completion([])
+                    return
+                }
                 var options: [VariantOption] = []
                 let lines = text.components(separatedBy: .newlines)
                 for (index, line) in lines.enumerated() where line.contains("#EXT-X-STREAM-INF") {

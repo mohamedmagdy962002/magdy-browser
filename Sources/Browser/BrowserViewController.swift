@@ -18,6 +18,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private let progressBar = UIProgressView(progressViewStyle: .default)
     private let toolbar = UIStackView()
     private let tabButton = UIButton(type: .system)
+    /// "Video is playing" mini banner (Aloha ref) under the omnibox.
+    private let playerBanner = PlayerSessionBanner()
+    private var bannerObserver: NSObjectProtocol?
+    private var downloadsObserver: NSObjectProtocol?
     private let backButton = UIButton(type: .system)
     private let forwardButton = UIButton(type: .system)
     private let downloadFAB = UIButton(type: .system)
@@ -232,11 +236,44 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             suggestionsTable.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 8),
             suggestionsTable.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             suggestionsTable.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            suggestionsTable.heightAnchor.constraint(lessThanOrEqualToConstant: 260)
+            suggestionsTable.heightAnchor.constraint(lessThanOrEqualToConstant: 260),
+
+            playerBanner.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 6),
+            playerBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            playerBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            playerBanner.heightAnchor.constraint(equalToConstant: 46)
         ])
 
         // Swipe on the toolbar switches tabs.
         toolbarChrome.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(toolbarSwiped(_:))))
+
+        // Keep the banner in sync with the audio session.
+        playerBanner.onStop = { [weak self] in
+            PlayerSession.shared.stop()
+            self?.playerBanner.isHidden = true
+        }
+        playerBanner.onDownload = { [weak self] in
+            guard let self, let url = PlayerSession.shared.url else { return }
+            DownloadOptionsSheet.present(
+                url: url, referer: nil, cookies: PlayerSession.shared.cookies, presenter: self
+            )
+        }
+        playerBanner.onExpand = { [weak self] in
+            guard let self, let url = PlayerSession.shared.url else { return }
+            self.presentVideoPlayer(url: url, title: PlayerSession.shared.title ?? "Video")
+        }
+        bannerObserver = NotificationCenter.default.addObserver(
+            forName: PlayerSession.bannerChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.playerBanner.isHidden = PlayerSession.shared.player == nil
+            self.playerBanner.refreshDownloadBadge()
+        }
+        downloadsObserver = NotificationCenter.default.addObserver(
+            forName: .magdyDownloadsChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.playerBanner.refreshDownloadBadge()
+        }
     }
 
     private func makeMenu() -> UIMenu {
@@ -438,9 +475,14 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private func presentVideoPlayer(url: URL, title: String) {
         let name = title.isEmpty ? url.host ?? "Video" : title
+        // Reopen seamlessly when this is the session's own video (banner → expand).
+        let reuse = PlayerSession.shared.url?.absoluteString == url.absoluteString
+            ? PlayerSession.shared.player : nil
         // Site cookies ride along so authenticated streams download correctly.
         activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            let player = VideoPlayerController(url: url, title: name, cookies: cookies)
+            let player = VideoPlayerController(
+                url: url, title: name, cookies: cookies, existingPlayer: reuse
+            )
             player.modalPresentationStyle = .fullScreen
             self?.present(player, animated: true)
         }
@@ -589,7 +631,15 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             self.progressBar.setProgress(Float(progress), animated: true)
         }
         tab.onVideoTapped = { [weak self] url, title in
-            self?.presentVideoPlayer(url: url, title: title)
+            guard let self else { return }
+            // Aloha-style chooser instead of jumping straight into the player.
+            self.activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+                DispatchQueue.main.async {
+                    VideoActionSheet.present(url: url, title: title, cookies: cookies, presenter: self) { target in
+                        self.presentVideoPlayer(url: target, title: title)
+                    }
+                }
+            }
         }
         tab.onOpenLink = { [weak self] url, privateMode in
             self?.open(url: url, privateMode: privateMode)
