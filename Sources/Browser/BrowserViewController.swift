@@ -425,8 +425,12 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     // MARK: - Video player
 
     private func presentVideoPlayer(url: URL, title: String) {
-        let player = VideoPlayerController(url: url, title: title.isEmpty ? url.host ?? "Video" : title)
-        present(player, animated: true)
+        let name = title.isEmpty ? url.host ?? "Video" : title
+        // Site cookies ride along so authenticated streams download correctly.
+        activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            let player = VideoPlayerController(url: url, title: name, cookies: cookies)
+            self?.present(player, animated: true)
+        }
     }
 
     // MARK: - Page tools
