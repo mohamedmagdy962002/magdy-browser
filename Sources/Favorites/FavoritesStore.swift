@@ -98,4 +98,9 @@ final class FavoritesStore {
         guard let data = try? JSONEncoder().encode(favorites) else { return }
         UserDefaults.standard.set(data, forKey: UserDefaultsKey.favorites)
     }
+
+    /// Re-reads from disk (used after a backup restore so the UI and next save see restored data).
+    func reloadFromDisk() {
+        load()
+    }
 }

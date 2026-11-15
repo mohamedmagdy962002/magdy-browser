@@ -126,7 +126,8 @@ final class BrowserTab: NSObject {
     func hibernate() {
         guard !isPrivate, !isHibernated else { return }
         isHibernated = true
-        hibernatedURL = webView.url ?? hibernatedURL
+        // Only the CURRENT page is restored — a tab parked on the start page wakes to the start page.
+        hibernatedURL = webView.url
         let frame = webView.frame
         let userAgent = webView.customUserAgent
         if let blockerObserver {
@@ -134,8 +135,8 @@ final class BrowserTab: NSObject {
             self.blockerObserver = nil
         }
         progressObservation = nil
-        appliedRuleLists = [:]
-        // Dropping the old WKWebView releases its renderer process memory.
+        // The replacement webView reuses baseConfiguration, whose userContentController
+        // already carries every rule list — do NOT reset appliedRuleLists (double-attach).
         webView = WKWebView(frame: frame, configuration: baseConfiguration)
         webView.customUserAgent = userAgent
         wireWebView()
@@ -146,10 +147,18 @@ final class BrowserTab: NSObject {
         guard isHibernated else { return }
         isHibernated = false
         lastActivatedAt = Date()
+        // The replacement webView's controller is a copy of the base one — reset
+        // tracking and re-attach every active rule list so none compiled after
+        // init is missing from the fresh copy.
+        let controller = webView.configuration.userContentController
+        for (_, list) in appliedRuleLists { controller.remove(list) }
+        appliedRuleLists = [:]
         applyNewRuleLists()
         if let url = hibernatedURL {
             hibernatedURL = nil
             load(url: url)
+        } else {
+            loadStartPage()
         }
     }
 
@@ -214,6 +223,11 @@ extension BrowserTab: WKNavigationDelegate {
                   let feeds = try? JSONDecoder().decode([String].self, from: data) else { return }
             self.rssFeeds = feeds
         }
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        // Old page's feeds must not leak into the new one's menu.
+        rssFeeds = []
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

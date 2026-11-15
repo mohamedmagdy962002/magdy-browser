@@ -351,6 +351,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     }
 
     /// Clears cookies, storage and cache belonging to the current site's domain.
+    /// Private tabs clear from their own non-persistent store.
     private func clearSiteData() {
         guard let tab = activeTab, let host = tab.webView.url?.host else { return }
         let types: Set<String> = [
@@ -360,7 +361,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             WKWebsiteDataTypeIndexedDBDatabases,
             WKWebsiteDataTypeDiskCache
         ]
-        let store = WKWebsiteDataStore.default()
+        let store = tab.webView.configuration.websiteDataStore
         store.fetchDataRecords(ofTypes: types) { records in
             let matching = records.filter {
                 host == $0.displayName || host.hasSuffix(".\($0.displayName)") || $0.displayName.hasSuffix(".\(host)")
@@ -478,12 +479,15 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private func activate(_ tab: BrowserTab) {
         activeTab?.webView.removeFromSuperview()
         activeTab = tab
+        tab.lastActivatedAt = Date()
+        // Wake FIRST — it may replace tab.webView entirely.
+        tab.wake()
 
         // Only the visible tab may drive chrome UI — background tabs finishing
         // their load must not flicker the progress bar or reload button.
-        tab.onTitleChange = { [weak self] _ in
-            guard self?.activeTab === tab else { return }
-            self?.refreshToolbar()
+        tab.onTitleChange = { [weak self, weak tab] _ in
+            guard let self, let tab, self.activeTab === tab else { return }
+            self.refreshToolbar()
         }
         tab.onLoadingChange = { [weak self] changedTab, loading in
             guard let self, self.activeTab === changedTab else { return }
@@ -520,7 +524,6 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         // Apply global page styles to an already-loaded tab (they are per-webView
         // injections, so switching tabs must re-apply them).
         tab.applyNightModeIfNeeded()
-        tab.wake() // restores a hibernated page if needed
         refreshToolbar()
         hibernateInactiveTabs()
     }
@@ -541,9 +544,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         backButton.isEnabled = tab.webView.canGoBack
         forwardButton.isEnabled = tab.webView.canGoForward
         // The floating download action belongs to the start page only.
-        downloadFAB.isHidden = tab.webView.url != nil
+        downloadFAB.isHidden = tab.displayURL != nil
         if !addressField.isFirstResponder {
-            addressField.text = tab.webView.url?.absoluteString ?? ""
+            addressField.text = tab.displayURL?.absoluteString ?? ""
         }
     }
 

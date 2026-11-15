@@ -42,6 +42,10 @@ enum BackupRestore {
         if let history = backup.history {
             HistoryStore.shared.restoreData(history)
         }
+        // Singleton stores cache state at init — make them see restored data now,
+        // otherwise the next save would silently overwrite it.
+        FavoritesStore.shared.reloadFromDisk()
+        ReadingListStore.shared.reloadFromDisk()
         // Observers on these notifications re-render the live screens.
         NotificationCenter.default.post(name: .magdyThemeChanged, object: nil)
         NotificationCenter.default.post(name: .magdyBlockStatsChanged, object: nil)

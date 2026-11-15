@@ -43,6 +43,11 @@ final class ReadingListStore {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
+
+    /// Re-reads from disk (used after a backup restore so the UI and next save see restored data).
+    func reloadFromDisk() {
+        load()
+    }
 }
 
 /// Offline reading list screen.

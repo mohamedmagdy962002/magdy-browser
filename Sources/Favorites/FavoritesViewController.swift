@@ -32,7 +32,8 @@ final class FavoritesViewController: UITableViewController {
     }
 
     private func reload() {
-        if searchController.isActive, let text = searchController.searchBar.text, !text.isEmpty {
+        let searching = searchController.isActive && !(searchController.searchBar.text?.isEmpty ?? true)
+        if searching, let text = searchController.searchBar.text, !text.isEmpty {
             items = store.search(text)
         } else if let openFolder {
             items = store.favorites(inFolder: openFolder)
@@ -42,9 +43,10 @@ final class FavoritesViewController: UITableViewController {
         tableView.reloadData()
     }
 
-    /// Items shown in the extra folder sections (only on the root view).
+    /// Items shown in the extra folder sections (only on the root view, not while searching).
     private var folderNames: [String] {
-        openFolder == nil ? store.folders() : []
+        let searching = searchController.isActive && !(searchController.searchBar.text?.isEmpty ?? true)
+        return (openFolder == nil && !searching) ? store.folders() : []
     }
 
     @objc private func addTapped() {
@@ -189,7 +191,8 @@ final class FavoritesViewController: UITableViewController {
         if destination < visible.count, let targetIndex = store.favorites.firstIndex(where: { $0.url == visible[destination].url }) {
             destination = targetIndex
         } else {
-            destination = storeIndex + 1
+            // End-of-list drop: after the last main-list item, skipping foldered entries.
+            destination = (store.favorites.lastIndex { $0.folder == nil } ?? -1) + 1
         }
         store.move(from: storeIndex, to: destination)
         reload()
