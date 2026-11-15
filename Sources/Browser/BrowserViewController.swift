@@ -4,6 +4,8 @@ import CoreImage
 
 final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
+    static let homepageURLKey = "magdy.homepageURL"
+
     private let store = TabStore()
     private var activeTab: BrowserTab?
 
@@ -331,8 +333,14 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let lockNow = UIAction(title: "Lock Now", image: UIImage(systemName: "lock")) { [weak self] _ in
             self?.lockNow()
         }
+        let homepage = UIAction(title: "Homepage", image: UIImage(systemName: "house")) { [weak self] _ in
+            guard let self,
+                  let raw = UserDefaults.standard.string(forKey: BrowserViewController.homepageURLKey),
+                  let url = URL(string: raw) else { return }
+            self.open(url, privateMode: false)
+        }
         var children: [UIMenuElement] = [
-            tabsGrid, reopen, privateTab, favorite, readingList, media, downloader,
+            tabsGrid, reopen, privateTab, favorite, homepage, readingList, media, downloader,
             reader, find, desktopSite, inSafari, copy, savePDF, screenshot,
             biggerText, smallerText, resetText, nightMode, translate,
             qr, shareQR, voice, clearSite, lockNow, closeAll

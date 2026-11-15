@@ -125,11 +125,12 @@ final class BrowserTab: NSObject {
           }).observe(document.documentElement, { childList: true, subtree: true });
           document.addEventListener('click', function (event) {
             const target = event.target;
-            const video = target && target.tagName === 'VIDEO' ? target : null;
+            const video = target && target.closest ? target.closest('video') : null;
             if (!video) return;
             event.preventDefault();
             event.stopPropagation();
-            const src = video.currentSrc || video.src || '';
+            const source = video.querySelector('source');
+            const src = video.currentSrc || video.src || (source && source.src) || '';
             if (!src) return;
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.magdyVideo) {
               window.webkit.messageHandlers.magdyVideo.postMessage({
@@ -421,13 +422,23 @@ extension BrowserTab: WKUIDelegate {
             return
         }
         let config = UIContextMenuConfiguration(actionProvider: { [weak self] _ in
-            UIMenu(children: [
+            var actions: [UIMenuElement] = [
                 UIAction(title: "Open in New Tab", image: UIImage(systemName: "plus.square.on.square")) { _ in
                     NotificationCenter.default.post(name: .magdyOpenURL, object: url)
                 },
                 UIAction(title: "Open in Private Tab", image: UIImage(systemName: "eye.slash")) { _ in
                     self?.onOpenLink?(url, true)
-                },
+                }
+            ]
+            let mediaExts = ["mp4", "m3u8", "webm", "mov", "mkv", "m4v", "avi", "ts", "mpd"]
+            if mediaExts.contains(url.pathExtension.lowercased()) {
+                actions.append(
+                    UIAction(title: "Open in Video Player", image: UIImage(systemName: "play.rectangle")) { [weak self] _ in
+                        self?.onVideoTapped?(url, url.lastPathComponent)
+                    }
+                )
+            }
+            actions.append(contentsOf: [
                 UIAction(title: "Open in Safari", image: UIImage(systemName: "safari")) { _ in
                     UIApplication.shared.open(url)
                 },
@@ -441,6 +452,7 @@ extension BrowserTab: WKUIDelegate {
                     }
                 }
             ])
+            return UIMenu(children: actions)
         })
         completionHandler(config)
     }

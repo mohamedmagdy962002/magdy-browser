@@ -7,14 +7,14 @@ final class SettingsViewController: UITableViewController {
         case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache
         case filterLists, customFilterLists, wallpaper, language, about
         case appLock, nightMode, searchEngine, vault, readingList, blockStats, theme, textZoom
-        case memorySaver, backup, forceZoom
+        case memorySaver, backup, forceZoom, homepage
     }
 
     private let sections: [(title: String, rows: [Row])] = [
         (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
         ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault, .memorySaver, .forceZoom, .backup]),
         ("Appearance", [.theme, .nightMode, .wallpaper, .textZoom]),
-        (L.t("language"), [.language, .searchEngine, .readingList]),
+        (L.t("language"), [.language, .searchEngine, .homepage, .readingList]),
         (L.t("about"), [.about])
     ]
 
@@ -94,6 +94,11 @@ final class SettingsViewController: UITableViewController {
             cell.textLabel?.text = "Search Engine"
             cell.accessoryType = .disclosureIndicator
             cell.detailTextLabel?.text = SearchEngine.displayName
+        case .homepage:
+            cell.textLabel?.text = "Homepage"
+            cell.accessoryType = .disclosureIndicator
+            let stored = UserDefaults.standard.string(forKey: BrowserViewController.homepageURLKey)
+            cell.detailTextLabel?.text = stored?.isEmpty == false ? stored : "Default (start page)"
         case .vault:
             cell.textLabel?.text = "Private Vault"
             cell.accessoryType = .disclosureIndicator
@@ -141,6 +146,8 @@ final class SettingsViewController: UITableViewController {
             present(navigation, animated: true)
         case .searchEngine:
             chooseSearchEngine()
+        case .homepage:
+            chooseHomepage()
         case .vault:
             let vault = VaultViewController()
             let navigation = UINavigationController(rootViewController: vault)
@@ -162,6 +169,31 @@ final class SettingsViewController: UITableViewController {
     }
 
     // MARK: - Actions
+
+    /// Lets the user set a custom homepage URL (empty = default start page).
+    private func chooseHomepage() {
+        let key = BrowserViewController.homepageURLKey
+        let alert = UIAlertController(title: "Homepage", message: "Opened from the ⋯ menu. Leave empty for the default start page.", preferredStyle: .alert)
+        alert.addTextField { field in
+            field.placeholder = "https://example.com"
+            field.text = UserDefaults.standard.string(forKey: key)
+            field.keyboardType = .URL
+            field.autocapitalizationType = .none
+        }
+        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
+            let raw = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if raw.isEmpty {
+                UserDefaults.standard.removeObject(forKey: key)
+            } else if let url = URL(string: raw), url.scheme != nil {
+                UserDefaults.standard.set(url.absoluteString, forKey: key)
+            } else if !raw.hasPrefix("http") {
+                UserDefaults.standard.set("https://\(raw)", forKey: key)
+            }
+            self?.tableView.reloadData()
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        present(alert, animated: true)
+    }
 
     private func makeSwitch(key: String, default defaultValue: Bool) -> UISwitch {
         let control = UISwitch()
