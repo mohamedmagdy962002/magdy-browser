@@ -10,7 +10,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
-    CURRENT_PROJECT_VERSION: "17"
+    CURRENT_PROJECT_VERSION: "18"
     MARKETING_VERSION: "2.14"
     TARGETED_DEVICE_FAMILY: "1,2"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -49,7 +49,7 @@ targets:
         CFBundleDisplayName: Magdy
         CFBundleName: Magdy Browser
         CFBundleShortVersionString: "2.14"
-        CFBundleVersion: "17"
+        CFBundleVersion: "18"
         UILaunchScreen: {}
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
