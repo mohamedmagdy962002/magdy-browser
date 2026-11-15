@@ -18,14 +18,14 @@ final class VideoPlayerController: UIViewController {
     // Controls (fade in/out on tap).
     private let chrome = UIView()
     private let topBar = UIView()
-    private let closeButton = UIButton(type: .system)
-    private let shareButton = UIButton(type: .system)
-    private let grabButton = UIButton(type: .system)
+    private var closeButton = UIButton(type: .system)
+    private var shareButton = UIButton(type: .system)
+    private var grabButton = UIButton(type: .system)
     private let titleLabel = UILabel()
-    private let centerRow = UIStackView()
-    private let skipBackButton = UIButton(type: .system)
-    private let playButton = UIButton(type: .system)
-    private let skipForwardButton = UIButton(type: .system)
+    private var centerRow = UIStackView()
+    private var skipBackButton = UIButton(type: .system)
+    private var playButton = UIButton(type: .system)
+    private var skipForwardButton = UIButton(type: .system)
     private let bottomCard = UIView()
     private let currentLabel = UILabel()
     private let durationLabel = UILabel()
@@ -273,10 +273,12 @@ final class VideoPlayerController: UIViewController {
     }
 
     private func setControlsHidden(_ hidden: Bool) {
-        chrome.isHidden = !hidden
-        chrome.alpha = hidden ? 0 : 1
-        UIView.animate(withDuration: 0.22) { self.chrome.alpha = hidden ? 0 : 1 }
-        chrome.isHidden = hidden
+        chrome.isHidden = false
+        UIView.animate(
+            withDuration: 0.22,
+            animations: { self.chrome.alpha = hidden ? 0 : 1 },
+            completion: { _ in self.chrome.isHidden = hidden }
+        )
         hideTimer?.invalidate()
         if !hidden {
             hideTimer = Timer.scheduledTimer(withTimeInterval: 3.5, repeats: false) { [weak self] _ in
@@ -377,16 +379,19 @@ final class VideoPlayerController: UIViewController {
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         let time = player.currentTime()
-        generator.copyCGImage(at: time, actualTime: nil) { [weak self] image, _ in
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var actual = CMTime.zero
+            let frame = (try? generator.copyCGImage(at: time, actualTime: &actual))
+                .map { UIImage(cgImage: $0) }
             DispatchQueue.main.async {
-                guard let self, let cgImage = image else {
-                    self?.toast("Frame grab is not supported for this stream")
+                guard let self else { return }
+                guard let frame else {
+                    self.toast("Frame grab is not supported for this stream")
                     return
                 }
-                let uiImage = UIImage(cgImage: cgImage)
                 let output = DownloadManager.shared.directory
                     .appendingPathComponent("frame-\(Int(Date().timeIntervalSince1970)).jpg")
-                guard let data = uiImage.jpegData(compressionQuality: 0.92) else {
+                guard let data = frame.jpegData(compressionQuality: 0.92) else {
                     self.toast("Could not encode the frame")
                     return
                 }
