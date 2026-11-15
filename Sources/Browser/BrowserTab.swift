@@ -5,7 +5,7 @@ import WebKit
 final class BrowserTab: NSObject {
     let id = UUID()
     let isPrivate: Bool
-    let webView: WKWebView
+    private(set) var webView: WKWebView
 
     private(set) var title: String = "New Tab"
 
@@ -15,14 +15,29 @@ final class BrowserTab: NSObject {
     /// Fired when the user taps a video element on the page.
     var onVideoTapped: ((URL, String) -> Void)?
 
+    /// Memory Saver: true while the page is released and will reload on activation.
+    private(set) var isHibernated = false
+    private var hibernatedURL: URL?
+    private(set) var lastActivatedAt = Date()
+    /// RSS/Atom feeds advertised by the current page (set on finish loading).
+    private(set) var rssFeeds: [String] = []
+
     private var progressObservation: NSKeyValueObservation?
     private var blockerObserver: UUID?
     private var appliedRuleLists: [String: WKContentRuleList] = [:]
+    /// The shared per-tab configuration — user scripts and message handlers
+    /// registered here carry over to any replacement web view.
+    private let baseConfiguration: WKWebViewConfiguration
 
     deinit {
         if let blockerObserver {
             ContentBlocker.shared.removeObserver(blockerObserver)
         }
+    }
+
+    /// URL shown in chrome when the tab may be hibernated.
+    var displayURL: URL? {
+        webView.url ?? hibernatedURL
     }
 
     private func applyNewRuleLists() {
@@ -49,14 +64,10 @@ final class BrowserTab: NSObject {
         configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.suppressesIncrementalRendering = false
 
+        self.baseConfiguration = configuration
         self.webView = WKWebView(frame: .zero, configuration: configuration)
 
         super.init()
-
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
-        webView.customUserAgent = "MagdyBrowser/1.0"
 
         ContentBlocker.shared.apply(to: configuration.userContentController)
         appliedRuleLists = Dictionary(uniqueKeysWithValues: ContentBlocker.shared.ruleLists.map { ($0.identifier, $0) })
@@ -84,17 +95,59 @@ final class BrowserTab: NSObject {
         configuration.userContentController.addUserScript(source)
         configuration.userContentController.add(WeakScriptMessageProxy(target: self), name: "magdyVideo")
 
+        wireWebView()
+        loadStartPage()
+    }
+
+    /// Wires the current webView instance — also used after hibernation replaces it.
+    private func wireWebView() {
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
+        webView.allowsBackForwardNavigationGestures = true
+        if webView.customUserAgent == nil {
+            webView.customUserAgent = "MagdyBrowser/1.0"
+        }
         // Newly compiled filter lists are attached to this tab as they arrive.
         blockerObserver = ContentBlocker.shared.observe { [weak self] in
             self?.applyNewRuleLists()
         }
-
         progressObservation = webView.observe(\.estimatedProgress, options: [.new]) { [weak self] webView, _ in
             guard let self else { return }
             self.onProgress?(self, webView.estimatedProgress)
         }
+    }
 
-        loadStartPage()
+    // MARK: - Hibernation (Memory Saver)
+
+    /// Releases the live page to free memory. Private tabs are never hibernated.
+    func hibernate() {
+        guard !isPrivate, !isHibernated else { return }
+        isHibernated = true
+        hibernatedURL = webView.url ?? hibernatedURL
+        let frame = webView.frame
+        let userAgent = webView.customUserAgent
+        if let blockerObserver {
+            ContentBlocker.shared.removeObserver(blockerObserver)
+            self.blockerObserver = nil
+        }
+        progressObservation = nil
+        appliedRuleLists = [:]
+        // Dropping the old WKWebView releases its renderer process memory.
+        webView = WKWebView(frame: frame, configuration: baseConfiguration)
+        webView.customUserAgent = userAgent
+        wireWebView()
+    }
+
+    /// Reloads the hibernated page.
+    func wake() {
+        guard isHibernated else { return }
+        isHibernated = false
+        lastActivatedAt = Date()
+        applyNewRuleLists()
+        if let url = hibernatedURL {
+            hibernatedURL = nil
+            load(url: url)
+        }
     }
 
     func loadStartPage() {
@@ -137,6 +190,27 @@ extension BrowserTab: WKNavigationDelegate {
             BlockStats.shared.audit(webView: webView)
         }
         applyNightModeIfNeeded()
+        detectRSSFeeds()
+    }
+
+    /// Reads the page's advertised RSS/Atom links so the menu can offer them.
+    private func detectRSSFeeds() {
+        let script = """
+        (function () {
+          const feeds = [];
+          document.querySelectorAll('link[type*="rss"], link[type*="atom"]').forEach(function (link) {
+            if (link.href) feeds.push(link.href);
+          });
+          return JSON.stringify(feeds);
+        })();
+        """
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            guard let self,
+                  let json = result as? String,
+                  let data = json.data(using: .utf8),
+                  let feeds = try? JSONDecoder().decode([String].self, from: data) else { return }
+            self.rssFeeds = feeds
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

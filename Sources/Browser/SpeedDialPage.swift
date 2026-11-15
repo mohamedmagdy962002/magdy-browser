@@ -15,7 +15,9 @@ enum SpeedDialPage {
         var result: [Tile] = []
         var seen = Set<String>()
 
-        for favorite in FavoritesStore.shared.favorites.prefix(8) {
+        // Folders are archives — only main-list favorites reach the speed dial.
+        let mainList = FavoritesStore.shared.favorites(inFolder: nil)
+        for favorite in mainList.prefix(8) {
             guard let host = URL(string: favorite.url)?.host, !seen.contains(host) else { continue }
             seen.insert(host)
             result.append(Tile(

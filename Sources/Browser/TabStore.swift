@@ -27,7 +27,7 @@ final class TabStore {
     /// Private tabs are never persisted.
     func persist() {
         let saved = tabs.compactMap { tab -> SavedTab? in
-            guard !tab.isPrivate, let url = tab.webView.url else { return nil }
+            guard !tab.isPrivate, let url = tab.displayURL else { return nil }
             return SavedTab(url: url.absoluteString)
         }
         if let data = try? JSONEncoder().encode(saved) {

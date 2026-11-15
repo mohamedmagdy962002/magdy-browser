@@ -7,11 +7,12 @@ final class SettingsViewController: UITableViewController {
         case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache
         case filterLists, customFilterLists, wallpaper, language, about
         case appLock, nightMode, searchEngine, vault, readingList, blockStats, theme, textZoom
+        case memorySaver, backup
     }
 
     private let sections: [(title: String, rows: [Row])] = [
         (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
-        ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault]),
+        ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault, .memorySaver, .backup]),
         ("Appearance", [.theme, .nightMode, .wallpaper, .textZoom]),
         (L.t("language"), [.language, .searchEngine, .readingList]),
         (L.t("about"), [.about])
@@ -103,6 +104,12 @@ final class SettingsViewController: UITableViewController {
             cell.textLabel?.text = "Ads blocked"
             cell.detailTextLabel?.text = BlockStats.shared.total.formatted()
             cell.accessoryType = .none
+        case .memorySaver:
+            cell.textLabel?.text = "Memory Saver"
+            cell.accessoryView = makeSwitch(key: "magdy.memorySaver", default: true)
+        case .backup:
+            cell.textLabel?.text = "Backup & Restore"
+            cell.accessoryType = .disclosureIndicator
         case .about:
             cell.textLabel?.text = L.t("about")
             cell.textLabel?.textColor = .secondaryLabel
@@ -143,6 +150,8 @@ final class SettingsViewController: UITableViewController {
             chooseTheme()
         case .textZoom:
             chooseTextZoom()
+        case .backup:
+            navigationController?.pushViewController(BackupViewController(), animated: true)
         default:
             break
         }

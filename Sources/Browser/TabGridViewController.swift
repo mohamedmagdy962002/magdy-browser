@@ -71,7 +71,7 @@ final class TabGridViewController: UICollectionViewController {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "cell", for: indexPath) as! TabCardCell
         let tab = store.tabs[indexPath.item]
         cell.titleLabel.text = tab.title
-        cell.hostLabel.text = tab.webView.url?.host ?? "Start page"
+        cell.hostLabel.text = tab.displayURL?.host ?? "Start page"
         cell.setPrivate(tab.isPrivate)
         tab.webView.takeSnapshot(with: nil) { image, _ in
             if let image, collectionView.cellForItem(at: indexPath) === cell {
@@ -95,7 +95,7 @@ final class TabGridViewController: UICollectionViewController {
         let tab = store.tabs[indexPath.item]
         let close = UIContextualAction(style: .destructive, title: "Close") { [weak self] _, _, completion in
             guard let self else { return }
-            self.onReopen(ClosedTab(url: tab.webView.url, isPrivate: tab.isPrivate))
+            self.onReopen(ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
             self.store.close(tab)
             self.onClosed(tab)
             collectionView.deleteItems(at: [indexPath])
@@ -114,7 +114,7 @@ final class TabGridViewController: UICollectionViewController {
             UIMenu(children: [
                 UIAction(title: "Close Tab", image: UIImage(systemName: "xmark")) { [weak self] _ in
                     guard let self else { return }
-                    self.onReopen(ClosedTab(url: tab.webView.url, isPrivate: tab.isPrivate))
+                    self.onReopen(ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
                     self.store.close(tab)
                     self.onClosed(tab)
                     collectionView.reloadData()
@@ -122,7 +122,7 @@ final class TabGridViewController: UICollectionViewController {
                 UIAction(title: "Close All Tabs", image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in
                     guard let self else { return }
                     for item in self.store.tabs {
-                        self.onReopen(ClosedTab(url: item.webView.url, isPrivate: item.isPrivate))
+                        self.onReopen(ClosedTab(url: item.displayURL, isPrivate: item.isPrivate))
                         self.onClosed(item)
                     }
                     self.store.closeAll()

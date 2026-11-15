@@ -77,6 +77,24 @@ final class HistoryStore {
 
     // MARK: - Persistence
 
+    /// Whole history as JSON, for backup export.
+    func exportData() -> Data? {
+        try? JSONEncoder().encode(entries)
+    }
+
+    /// Replaces history from a backup. Returns false for undecodable data.
+    @discardableResult
+    func restoreData(_ data: Data) -> Bool {
+        guard let decoded = try? JSONDecoder().decode([HistoryEntry].self, from: data) else { return false }
+        entries = decoded
+        pendingSave?.cancel()
+        let snapshot = entries
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.save(snapshot)
+        }
+        return true
+    }
+
     private func scheduleSave() {
         pendingSave?.cancel()
         // Snapshot on the main thread — the background save must not read

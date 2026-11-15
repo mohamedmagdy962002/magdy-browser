@@ -272,6 +272,16 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let savePDF = UIAction(title: "Export Page as PDF", image: UIImage(systemName: "doc.richtext")) { [weak self] _ in
             self?.exportPDF(fullPage: false)
         }
+        let screenshot = UIAction(title: "Full Page Screenshot", image: UIImage(systemName: "camera.viewfinder")) { [weak self] _ in
+            self?.fullPageScreenshot()
+        }
+        let clearSite = UIAction(
+            title: "Clear Data for This Site",
+            image: UIImage(systemName: "shield.slash"),
+            attributes: .destructive
+        ) { [weak self] _ in
+            self?.clearSiteData()
+        }
         let nightMode = UIAction(
             title: activeTab?.nightModeEnabled == true ? "Night Mode Off" : "Night Mode On",
             image: UIImage(systemName: "moon")
@@ -293,11 +303,73 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let lockNow = UIAction(title: "Lock Now", image: UIImage(systemName: "lock")) { [weak self] _ in
             self?.lockNow()
         }
-        return UIMenu(children: [
+        var children: [UIMenuElement] = [
             tabsGrid, reopen, privateTab, favorite, readingList, media, downloader,
-            reader, find, desktopSite, inSafari, copy, savePDF, nightMode, translate,
-            qr, voice, lockNow, closeAll
-        ])
+            reader, find, desktopSite, inSafari, copy, savePDF, screenshot, nightMode, translate,
+            qr, voice, clearSite, lockNow, closeAll
+        ]
+        // RSS/Atom feeds advertised by the current page.
+        if let feeds = activeTab?.rssFeeds, !feeds.isEmpty {
+            children.insert(
+                UIAction(title: "RSS Feeds", image: UIImage(systemName: "dot.radiowaves.right")) { [weak self] _ in
+                    self?.showRSSFeeds(feeds)
+                },
+                at: 0
+            )
+        }
+        return UIMenu(children: children)
+    }
+
+    /// Lists the feeds found on the page; tapping one opens it.
+    private func showRSSFeeds(_ feeds: [String]) {
+        let sheet = UIAlertController(title: "Feeds on this page", message: nil, preferredStyle: .actionSheet)
+        for feed in feeds {
+            sheet.addAction(UIAlertAction(title: feed, style: .default) { [weak self] _ in
+                guard let url = URL(string: feed) else { return }
+                self?.open(url: url, privateMode: false)
+            })
+        }
+        sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        sheet.popoverPresentationController?.sourceView = view
+        present(sheet, animated: true)
+    }
+
+    /// Saves the whole page (top to bottom) to the photo library.
+    private func fullPageScreenshot() {
+        guard let tab = activeTab, tab.webView.url != nil else { return }
+        let contentSize = tab.webView.scrollView.contentSize
+        guard contentSize.width > 0, contentSize.height > 0 else { return }
+        let config = WKSnapshotConfiguration()
+        config.rect = CGRect(origin: .zero, size: contentSize)
+        tab.webView.takeSnapshot(with: config) { [weak self] image, _ in
+            guard let image else { return }
+            UIImageWriteToSavedPhotosAlbum(image, nil, nil, nil)
+            let alert = UIAlertController(title: "Saved", message: "Full-page screenshot saved to Photos.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
+            self?.present(alert, animated: true)
+        }
+    }
+
+    /// Clears cookies, storage and cache belonging to the current site's domain.
+    private func clearSiteData() {
+        guard let tab = activeTab, let host = tab.webView.url?.host else { return }
+        let types: Set<String> = [
+            WKWebsiteDataTypeCookies,
+            WKWebsiteDataTypeLocalStorage,
+            WKWebsiteDataTypeSessionStorage,
+            WKWebsiteDataTypeIndexedDBDatabases,
+            WKWebsiteDataTypeDiskCache
+        ]
+        let store = WKWebsiteDataStore.default()
+        store.fetchDataRecords(ofTypes: types) { records in
+            let matching = records.filter {
+                host == $0.displayName || host.hasSuffix(".\($0.displayName)") || $0.displayName.hasSuffix(".\(host)")
+            }
+            guard !matching.isEmpty else { return }
+            store.removeData(ofTypes: types, for: matching) {
+                DispatchQueue.main.async { tab.reload() }
+            }
+        }
     }
 
     // MARK: - Video downloader
@@ -448,7 +520,19 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         // Apply global page styles to an already-loaded tab (they are per-webView
         // injections, so switching tabs must re-apply them).
         tab.applyNightModeIfNeeded()
+        tab.wake() // restores a hibernated page if needed
         refreshToolbar()
+        hibernateInactiveTabs()
+    }
+
+    /// Memory Saver: releases pages that have been inactive for over 5 minutes.
+    private func hibernateInactiveTabs() {
+        let saverOn = UserDefaults.standard.object(forKey: "magdy.memorySaver") as? Bool ?? true
+        guard saverOn else { return }
+        let cutoff = Date().addingTimeInterval(-300)
+        for tab in store.tabs where tab !== activeTab && tab.lastActivatedAt < cutoff {
+            tab.hibernate()
+        }
     }
 
     private func refreshToolbar() {
@@ -470,7 +554,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private func closeAllTabs() {
         for tab in store.tabs {
-            closedTabs.append(TabGridViewController.ClosedTab(url: tab.webView.url, isPrivate: tab.isPrivate))
+            closedTabs.append(TabGridViewController.ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
         }
         store.closeAll()
         openNewTab(privateMode: false)
