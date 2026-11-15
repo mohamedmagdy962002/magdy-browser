@@ -43,6 +43,7 @@ final class VideoPlayerController: UIViewController {
     private var rate: Float
     private var hideTimer: Timer?
     private var errorShown = false
+    private let reusedPlayer: AVPlayer?
 
     init(url: URL, title: String, cookies: [HTTPCookie] = [], isLocal: Bool = false, existingPlayer: AVPlayer? = nil) {
         self.url = url
@@ -50,6 +51,7 @@ final class VideoPlayerController: UIViewController {
         self.cookies = cookies
         self.isLocal = isLocal
         self.player = existingPlayer ?? AVPlayer()
+        self.reusedPlayer = existingPlayer
         // Speed choice sticks across sessions.
         let saved = UserDefaults.standard.object(forKey: "magdy.playerRate") as? Float ?? 1.0
         rate = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0].contains(saved) ? saved : 1.0
@@ -289,7 +291,7 @@ final class VideoPlayerController: UIViewController {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
         let item: AVPlayerItem
-        if existingPlayer != nil, player.currentItem != nil {
+        if reusedPlayer != nil, player.currentItem != nil {
             // Session player reopened from the banner — keep playing seamlessly.
             item = player.currentItem!
         } else {
