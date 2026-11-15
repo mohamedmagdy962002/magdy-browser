@@ -243,6 +243,9 @@ final class VideoPlayerController: UIViewController {
     }
 
     private func preparePlayer() {
+        // Audio keeps playing over the lock screen and other apps' music.
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
         let item = AVPlayerItem(url: url)
         player.replaceCurrentItem(with: item)
         player.defaultRate = rate
