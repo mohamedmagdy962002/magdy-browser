@@ -133,9 +133,8 @@ final class BrowserTab: NSObject {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        if webView.customUserAgent == nil {
-            webView.customUserAgent = "MagdyBrowser/1.0"
-        }
+        // No custom UA by default — WebKit's native Mobile Safari UA is what
+        // makes sites serve mobile layouts. Only remembered desktop sites override.
         // Newly compiled filter lists are attached to this tab as they arrive.
         blockerObserver = ContentBlocker.shared.observe { [weak self] in
             self?.applyNewRuleLists()
@@ -272,12 +271,12 @@ extension BrowserTab: WKNavigationDelegate {
     private static func errorPage(host: String) -> String {
         """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>body{font-family:-apple-system,system-ui,sans-serif;background:#F5F5FB;color:#1C1C1E;
+        <style>body{font-family:-apple-system,system-ui,sans-serif;background:#0D0E12;color:#F3F4F6;
         display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
-        .card{background:#fff;border-radius:20px;padding:36px 30px;max-width:320px;text-align:center;
-        box-shadow:0 8px 24px rgba(28,28,30,.08)}
-        h1{font-size:20px;margin:0 0 8px}p{color:#8E8E93;font-size:14px;margin:0 0 20px}
-        button{background:#4A47F0;color:#fff;border:0;border-radius:14px;padding:12px 28px;
+        .card{background:#181920;border-radius:16px;padding:36px 30px;max-width:320px;text-align:center;
+        box-shadow:0 8px 24px rgba(0,0,0,.35)}
+        h1{font-size:20px;margin:0 0 8px}p{color:#9CA3AF;font-size:14px;margin:0 0 20px}
+        button{background:#8B5CF6;color:#fff;border:0;border-radius:12px;padding:12px 28px;
         font-size:15px;font-weight:700}</style></head>
         <body><div class="card"><h1>\(host) is unreachable</h1>
         <p>Check the address or your connection.</p>
@@ -495,7 +494,8 @@ extension BrowserTab {
         if perSite[host] == "desktop" {
             webView.customUserAgent = Self.desktopUserAgent
         } else {
-            webView.customUserAgent = "MagdyBrowser/1.0"
+            // Unremembered or mobile sites: system default (proper Mobile Safari UA).
+            webView.customUserAgent = nil
         }
     }
 

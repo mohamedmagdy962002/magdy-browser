@@ -92,7 +92,9 @@ final class MediaToolsViewController: UITableViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if let header = tableView.tableHeaderView {
+        // Only resize when needed — reassigning tableHeaderView every layout pass
+        // loops forever on UITableViewController (reassign re-triggers layout).
+        if let header = tableView.tableHeaderView, header.frame.size.height != 132 {
             header.frame.size.height = 132
             tableView.tableHeaderView = header
         }

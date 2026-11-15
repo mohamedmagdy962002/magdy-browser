@@ -413,7 +413,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let desktop = tab.webView.customUserAgent?.contains("Macintosh") != true
         tab.webView.customUserAgent = desktop
             ? BrowserTab.desktopUserAgent
-            : "MagdyBrowser/1.0"
+            : nil
         BrowserTab.rememberUserAgent(host: url.host ?? "", desktop: desktop)
         tab.webView.load(URLRequest(url: url))
     }
