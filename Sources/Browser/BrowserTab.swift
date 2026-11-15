@@ -70,7 +70,10 @@ final class BrowserTab: NSObject {
         super.init()
 
         ContentBlocker.shared.apply(to: configuration.userContentController)
-        appliedRuleLists = Dictionary(uniqueKeysWithValues: ContentBlocker.shared.ruleLists.map { ($0.identifier, $0) })
+        appliedRuleLists = Dictionary(
+            ContentBlocker.shared.ruleLists.map { ($0.identifier, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         // Tapping a video on the page opens the in-app player.
         let videoHook = """
