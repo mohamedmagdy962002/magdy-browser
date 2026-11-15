@@ -85,6 +85,12 @@ final class VideoPlayerController: UIViewController {
         let tap = UITapGestureRecognizer(target: self, action: #selector(toggleChrome))
         tap.cancelsTouchesInView = false
         view.addGestureRecognizer(tap)
+        // Double-tap left/right half of the video skips ±10s (YouTube-style).
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(doubleTapSkip(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.cancelsTouchesInView = false
+        view.addGestureRecognizer(doubleTap)
+        tap.require(toFail: doubleTap)
 
         view.addSubview(chrome)
         chrome.translatesAutoresizingMaskIntoConstraints = false
@@ -267,7 +273,13 @@ final class VideoPlayerController: UIViewController {
             self.refreshDownloadPill()
             // Remember playback position for local files.
             if self.isLocal, time.seconds.isFinite {
-                UserDefaults.standard.set(time.seconds, forKey: "magdy.playback.\(self.url.path)")
+                // Fully watched: reset so it starts from the top next time.
+                if let duration = self.player.currentItem?.duration.seconds, duration.isFinite,
+                   time.seconds >= duration - 2 {
+                    UserDefaults.standard.set(0, forKey: "magdy.playback.\(self.url.path)")
+                } else {
+                    UserDefaults.standard.set(time.seconds, forKey: "magdy.playback.\(self.url.path)")
+                }
             }
         }
 
@@ -286,6 +298,13 @@ final class VideoPlayerController: UIViewController {
 
     @objc private func toggleChrome() {
         setControlsHidden(!chrome.isHidden)
+    }
+
+    /// Double-tap on the left half rewinds 10s, right half advances — YouTube-style.
+    @objc private func doubleTapSkip(_ gesture: UITapGestureRecognizer) {
+        let isLeft = gesture.location(in: view).x < view.bounds.midX
+        skip(isLeft ? -10 : 10)
+        toast(isLeft ? "« 10s" : "10s »")
     }
 
     private func setControlsHidden(_ hidden: Bool) {
