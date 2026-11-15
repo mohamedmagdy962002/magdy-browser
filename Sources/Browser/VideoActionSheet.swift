@@ -70,9 +70,10 @@ final class VideoActionSheet: UIViewController {
             // and presenting from a detached VC silently fails.
             let base = self.presentingViewController
             self.dismiss(animated: true) {
+                guard let base = base ?? VideoActionSheet.rootPresenter() else { return }
                 DownloadOptionsSheet.present(
                     url: self.url, referer: nil, cookies: self.cookies,
-                    presenter: base ?? VideoActionSheet.rootPresenter()
+                    presenter: base
                 )
             }
         }
