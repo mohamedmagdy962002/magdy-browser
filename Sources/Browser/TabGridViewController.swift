@@ -110,6 +110,7 @@ final class TabGridViewController: UICollectionViewController {
             self.onReopen(ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
             self.store.close(tab)
             self.onClosed(tab)
+            self.filteredTabs = self.filteredTabs?.filter { $0 !== tab }
             collectionView.reloadData()
             completion(true)
         }
@@ -129,6 +130,7 @@ final class TabGridViewController: UICollectionViewController {
                     self.onReopen(ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
                     self.store.close(tab)
                     self.onClosed(tab)
+                    self.filteredTabs = self.filteredTabs?.filter { $0 !== tab }
                     collectionView.reloadData()
                 },
                 UIAction(title: "Close All Tabs", image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in
@@ -138,6 +140,7 @@ final class TabGridViewController: UICollectionViewController {
                         self.onClosed(item)
                     }
                     self.store.closeAll()
+                    self.filteredTabs = nil
                     collectionView.reloadData()
                 }
             ])

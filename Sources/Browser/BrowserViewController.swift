@@ -563,6 +563,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         if !addressField.isFirstResponder {
             addressField.text = tab.displayURL?.absoluteString ?? ""
         }
+        // Rebuild on every load — menu actions (per-site ad toggle) capture the
+        // current page's host, so a stale menu would flip the wrong site's setting.
+        menuButton.menu = makeMenu()
     }
 
     override func viewWillAppear(_ animated: Bool) {
