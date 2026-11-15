@@ -39,7 +39,7 @@ final class VideoPlayerController: UIViewController {
 
     private var timeObserver: Any?
     private var isScrubbing = false
-    private var rate: Float = 1.0
+    private var rate: Float
     private var hideTimer: Timer?
 
     init(url: URL, title: String, cookies: [HTTPCookie] = [], isLocal: Bool = false) {
@@ -47,6 +47,9 @@ final class VideoPlayerController: UIViewController {
         self.pageTitle = title
         self.cookies = cookies
         self.isLocal = isLocal
+        // Speed choice sticks across sessions.
+        let saved = UserDefaults.standard.object(forKey: "magdy.playerRate") as? Float ?? 1.0
+        rate = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0].contains(saved) ? saved : 1.0
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
     }
@@ -186,7 +189,7 @@ final class VideoPlayerController: UIViewController {
         pipButton.tintColor = .white
         pipButton.addTarget(self, action: #selector(pipTapped), for: .touchUpInside)
 
-        speedButton.setTitle("1×", for: .normal)
+        speedButton.setTitle(String(format: "%.2g×", rate), for: .normal)
         speedButton.setTitleColor(.white, for: .normal)
         speedButton.titleLabel?.font = Theme.headline(14, weight: .bold)
         speedButton.showsMenuAsPrimaryAction = true
@@ -380,6 +383,7 @@ final class VideoPlayerController: UIViewController {
             UIAction(title: String(format: "%.2g×", value), state: abs(value - rate) < 0.01 ? .on : .off) { [weak self] _ in
                 guard let self else { return }
                 self.rate = value
+                UserDefaults.standard.set(value, forKey: "magdy.playerRate")
                 self.player.defaultRate = value
                 if self.player.timeControlStatus == .playing { self.player.rate = value }
                 self.speedButton.setTitle(String(format: "%.2g×", value), for: .normal)
@@ -400,7 +404,7 @@ final class VideoPlayerController: UIViewController {
             $0.sourceURL?.absoluteString == url.absoluteString
         }
         if let existing, existing.state == .running || existing.state == .paused {
-            toast("Already downloading — see Downloads")
+            showDownloadMenu(for: existing)
             return
         }
         if let existing, existing.state == .finished, let localURL = existing.localURL {
@@ -414,6 +418,26 @@ final class VideoPlayerController: UIViewController {
             DownloadManager.shared.start(url: url, referer: nil, cookies: cookies)
         }
         toast("Downloading…")
+    }
+
+    /// Pause / resume / cancel without leaving the player.
+    private func showDownloadMenu(for item: DownloadItem) {
+        let alert = UIAlertController(title: item.fileName, message: nil, preferredStyle: .actionSheet)
+        if item.state == .running {
+            alert.addAction(UIAlertAction(title: "Pause", style: .default) { _ in
+                DownloadManager.shared.pause(item)
+            })
+        } else {
+            alert.addAction(UIAlertAction(title: "Resume", style: .default) { _ in
+                DownloadManager.shared.resume(item)
+            })
+        }
+        alert.addAction(UIAlertAction(title: "Cancel download", style: .destructive) { _ in
+            DownloadManager.shared.cancel(item)
+        })
+        alert.addAction(UIAlertAction(title: "Close", style: .cancel))
+        alert.popoverPresentationController?.sourceView = downloadPill
+        present(alert, animated: true)
     }
 
     /// Unique extra: saves the current frame as a JPG into Downloads.
