@@ -39,6 +39,6 @@ extension String {
     }
 
     private func searchURL(for query: String) -> URL? {
-        SearchEngine.selected.searchURL(for: query)
+        SearchEngine.effectiveSearchURL(for: query)
     }
 }

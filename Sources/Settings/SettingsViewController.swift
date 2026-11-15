@@ -93,7 +93,7 @@ final class SettingsViewController: UITableViewController {
         case .searchEngine:
             cell.textLabel?.text = "Search Engine"
             cell.accessoryType = .disclosureIndicator
-            cell.detailTextLabel?.text = SearchEngine.selected.name
+            cell.detailTextLabel?.text = SearchEngine.displayName
         case .vault:
             cell.textLabel?.text = "Private Vault"
             cell.accessoryType = .disclosureIndicator
@@ -241,11 +241,36 @@ final class SettingsViewController: UITableViewController {
                 self?.tableView.reloadData()
             })
         }
+        sheet.addAction(UIAlertAction(title: "Custom…", style: .default) { [weak self] _ in
+            self?.configureCustomEngine()
+        })
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
         if let popover = sheet.popoverPresentationController {
             popover.sourceView = tableView.cellForRow(at: IndexPath(row: 1, section: 3))
         }
         present(sheet, animated: true)
+    }
+
+    /// Name + URL template (with %s where the query goes).
+    private func configureCustomEngine() {
+        let alert = UIAlertController(title: "Custom Search Engine", message: "URL template — use %s where the search query goes, e.g. https://example.com/search?q=%s", preferredStyle: .alert)
+        alert.addTextField { $0.placeholder = "Name" }
+        alert.addTextField { $0.placeholder = "https://example.com/search?q=%s" }
+        alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
+            let name = alert.textFields?[0].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let template = alert.textFields?[1].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            // Only accept templates that actually contain the query placeholder.
+            guard !name.isEmpty, template.contains("%s"), URL(string: template.replacingOccurrences(of: "%s", with: "test")) != nil else {
+                self?.showAlert(title: "Invalid engine", message: "Enter a name and a URL containing %s")
+                return
+            }
+            UserDefaults.standard.set(name, forKey: "magdy.customSearchName")
+            UserDefaults.standard.set(template, forKey: "magdy.customSearchURL")
+            UserDefaults.standard.set("custom", forKey: "magdy.searchEngine")
+            self?.tableView.reloadData()
+        })
+        alert.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        present(alert, animated: true)
     }
 
     private func clearBrowsingData(since date: Date) {

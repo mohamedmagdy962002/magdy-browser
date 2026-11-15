@@ -523,6 +523,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         tab.onVideoTapped = { [weak self] url, title in
             self?.presentVideoPlayer(url: url, title: title)
         }
+        tab.onOpenLink = { [weak self] url, privateMode in
+            self?.open(url: url, privateMode: privateMode)
+        }
 
         // Pull-to-refresh.
         let refresh = UIRefreshControl()
@@ -844,7 +847,7 @@ extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {
         addressField.text = query
         addressField.resignFirstResponder()
         suggestionsTable.isHidden = true
-        guard let tab = activeTab, let url = SearchEngine.selected.searchURL(for: query) else { return }
+        guard let tab = activeTab, let url = SearchEngine.effectiveSearchURL(for: query) else { return }
         tab.load(url: url)
     }
 }
@@ -910,7 +913,7 @@ extension BrowserViewController {
     private func openVoiceSearch() {
         let search = VoiceSearchViewController()
         search.onText = { [weak self] text in
-            guard let self, let url = SearchEngine.selected.searchURL(for: text) else { return }
+            guard let self, let url = SearchEngine.effectiveSearchURL(for: text) else { return }
             self.open(url: url, privateMode: false)
         }
         let navigation = UINavigationController(rootViewController: search)

@@ -59,7 +59,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             return true
         }
         if let search, !search.isEmpty {
-            let destination = SearchEngine.selected.searchURL(for: search)
+            let destination = SearchEngine.effectiveSearchURL(for: search)
             if let destination {
                 NotificationCenter.default.post(name: .magdyOpenURL, object: destination)
                 return true

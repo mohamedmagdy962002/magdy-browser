@@ -48,6 +48,30 @@ enum SearchEngine: String, CaseIterable {
         }
     }
 
+    /// True when the user configured a custom engine as active.
+    static var isCustom: Bool {
+        UserDefaults.standard.string(forKey: "magdy.searchEngine") == "custom"
+            && UserDefaults.standard.string(forKey: "magdy.customSearchURL")?.contains("%s") == true
+    }
+
+    /// Search URL honoring a user-defined engine (template with %s placeholder).
+    static func effectiveSearchURL(for query: String) -> URL? {
+        guard isCustom, let template = UserDefaults.standard.string(forKey: "magdy.customSearchURL") else {
+            return selected.searchURL(for: query)
+        }
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+#"))
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: allowed) ?? query
+        return URL(string: template.replacingOccurrences(of: "%s", with: encoded))
+    }
+
+    /// Display name of the active engine, including a custom one.
+    static var displayName: String {
+        if isCustom {
+            return UserDefaults.standard.string(forKey: "magdy.customSearchName") ?? "Custom"
+        }
+        return selected.name
+    }
+
     /// Omnibox suggestions from DuckDuckGo's public autocomplete endpoint.
     static func suggestions(for query: String, completion: @escaping ([String]) -> Void) {
         let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&+#"))
