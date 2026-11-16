@@ -91,8 +91,10 @@ final class TabGridViewController: UICollectionViewController {
         cell.setPrivate(tab.isPrivate)
         // Violet border marks the browser's current tab.
         let isActive = tab === activeTab
-        cell.layer.borderWidth = isActive ? 2 : 0
-        cell.layer.borderColor = isActive ? Theme.primary.cgColor : nil
+        cell.layer.borderWidth = isActive ? 2 : 1
+        cell.layer.borderColor = isActive
+            ? Theme.primary.cgColor
+            : Theme.hairline.cgColor
         tab.webView.takeSnapshot(with: nil) { image, _ in
             if let image, collectionView.cellForItem(at: indexPath) === cell {
                 cell.snapshotView.image = image

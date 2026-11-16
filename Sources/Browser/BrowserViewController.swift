@@ -143,7 +143,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
         let menuButton = self.menuButton
         menuButton.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
-        menuButton.tintColor = Theme.textPrimary
+        menuButton.tintColor = Theme.primary
         menuButton.showsMenuAsPrimaryAction = true
         menuButton.menu = makeMenu()
 
@@ -1023,10 +1023,15 @@ extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "suggestion", for: indexPath)
+        // Stitch omnibox mock: globe for typed URLs, muted magnifier for searches.
+        let query = suggestions[indexPath.row]
+        let looksLikeURL = query.contains(".") && !query.contains(" ")
         var content = cell.defaultContentConfiguration()
-        content.image = UIImage(systemName: "magnifyingglass")
-        content.text = suggestions[indexPath.row]
+        content.image = UIImage(systemName: looksLikeURL ? "globe" : "magnifyingglass")
+        content.imageProperties.tintColor = looksLikeURL ? Theme.primary : Theme.textSecondary
+        content.text = query
         content.textProperties.font = Theme.body(15)
+        content.textProperties.color = Theme.textPrimary
         cell.contentConfiguration = content
         cell.backgroundColor = .clear
         return cell
