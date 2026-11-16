@@ -24,7 +24,6 @@ final class VideoPlayerController: UIViewController {
     private let topBar = UIView()
     private var closeButton = UIButton(type: .system)
     private var shareButton = UIButton(type: .system)
-    private var grabButton = UIButton(type: .system)
     private let titleLabel = UILabel()
     private var centerRow = UIStackView()
     private var skipBackButton = UIButton(type: .system)
@@ -44,6 +43,9 @@ final class VideoPlayerController: UIViewController {
     private var hideTimer: Timer?
     private var errorShown = false
     private let reusedPlayer: AVPlayer?
+    /// True when ✕ adopted the player into PlayerSession (audio keeps playing) —
+    /// viewDidDisappear must not pause it then.
+    private var adopted = false
 
     init(url: URL, title: String, cookies: [HTTPCookie] = [], isLocal: Bool = false, existingPlayer: AVPlayer? = nil) {
         self.url = url
@@ -77,7 +79,10 @@ final class VideoPlayerController: UIViewController {
             player.removeTimeObserver(timeObserver)
             self.timeObserver = nil
         }
-        player.pause()
+        // Adopted players keep playing under the "Video is playing" banner.
+        if !adopted {
+            player.pause()
+        }
     }
 
     // MARK: - Setup
@@ -104,7 +109,9 @@ final class VideoPlayerController: UIViewController {
         tap.require(toFail: doubleTap)
 
         // Swipe down anywhere to close — a second way out besides the ✕.
+        // cancelsTouchesInView = false so drifting fingers never cancel button taps.
         let swipeDown = UIPanGestureRecognizer(target: self, action: #selector(swipeDownClose(_:)))
+        swipeDown.cancelsTouchesInView = false
         view.addGestureRecognizer(swipeDown)
 
         view.addSubview(chrome)
@@ -125,18 +132,19 @@ final class VideoPlayerController: UIViewController {
             return button
         }
         closeButton = topIcon("xmark", selector: #selector(closeTapped))
-        grabButton = topIcon("camera.viewfinder", selector: #selector(grabFrameTapped))
-        grabButton.accessibilityLabel = "Save current frame"
         shareButton = topIcon("square.and.arrow.up", selector: #selector(shareTapped))
 
+        // Aloha reference: one glass pill holding ✕ · centered title · share.
+        // Equal-width spacers keep the title exactly centered.
+        let spacerLeft = UIView()
+        let spacerRight = UIView()
         let titleStack = UIStackView(arrangedSubviews: [
-            closeButton, titleLabel, grabButton, shareButton
+            closeButton, spacerLeft, titleLabel, spacerRight, shareButton
         ])
         titleStack.axis = .horizontal
-        titleStack.alignment = .top
-        titleStack.spacing = 12
+        titleStack.alignment = .center
+        titleStack.spacing = 8
         titleStack.translatesAutoresizingMaskIntoConstraints = false
-        // Aloha reference: one glass pill holding ✕ · title · share.
         titleStack.backgroundColor = UIColor(white: 0, alpha: 0.42)
         titleStack.layer.cornerRadius = 18
         titleStack.layer.cornerCurve = .continuous
@@ -145,6 +153,9 @@ final class VideoPlayerController: UIViewController {
         topBar.addSubview(titleStack)
         chrome.addSubview(topBar)
         topBar.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            spacerLeft.widthAnchor.constraint(equalTo: spacerRight.widthAnchor)
+        ])
 
         // Center transport: −10s · play · +10s.
         func transport(_ systemName: String, selector: Selector, size: CGFloat) -> UIButton {
@@ -239,6 +250,15 @@ final class VideoPlayerController: UIViewController {
                 self?.shareTapped()
             }
         ])
+        // Real touch targets so the icons never feel dead.
+        NSLayoutConstraint.activate([
+            pipButton.widthAnchor.constraint(equalToConstant: 44),
+            pipButton.heightAnchor.constraint(equalToConstant: 44),
+            speedButton.widthAnchor.constraint(equalToConstant: 44),
+            speedButton.heightAnchor.constraint(equalToConstant: 44),
+            moreButton.widthAnchor.constraint(equalToConstant: 44),
+            moreButton.heightAnchor.constraint(equalToConstant: 44)
+        ])
 
         let actionRow = UIStackView(arrangedSubviews: [
             downloadPill, pipButton, speedButton, routePicker, moreButton
@@ -276,9 +296,8 @@ final class VideoPlayerController: UIViewController {
             titleStack.bottomAnchor.constraint(equalTo: topBar.bottomAnchor),
 
             closeButton.widthAnchor.constraint(equalToConstant: 34),
-            grabButton.widthAnchor.constraint(equalToConstant: 34),
             shareButton.widthAnchor.constraint(equalToConstant: 34),
-            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: closeButton.trailingAnchor, constant: 4),
+            titleStack.heightAnchor.constraint(equalToConstant: 46),
 
             centerRow.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             centerRow.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -40),
@@ -414,6 +433,7 @@ final class VideoPlayerController: UIViewController {
         if !isLocal && player.timeControlStatus == .playing {
             // Keep audio going; the browser shows the "Video is playing" banner.
             PlayerSession.shared.adopt(player, url: url, title: pageTitle, cookies: cookies)
+            adopted = true
         } else {
             player.pause()
         }
