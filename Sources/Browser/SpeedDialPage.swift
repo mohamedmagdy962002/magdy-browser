@@ -101,6 +101,8 @@ enum SpeedDialPage {
                   --tile-shadow:0 2px 8px rgba(167,139,250,.06),0 8px 24px rgba(0,0,0,.35);
                   --badge-shadow:0 6px 14px rgba(0,0,0,.45);
                   --qa-bg:rgba(139,92,246,.15);--qa-border:rgba(139,92,246,.30)}
+            .hero{background:rgba(24,25,32,.55);border-color:rgba(255,255,255,.12);
+                  box-shadow:0 8px 32px rgba(0,0,0,.35)}
           }
           body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:20px 24px;
                color:var(--text);-webkit-font-smoothing:antialiased;min-height:100vh;
@@ -110,7 +112,11 @@ enum SpeedDialPage {
                      background:var(--qa-bg);border:1px solid var(--qa-border);color:var(--accent-2);
                      font-size:12px;font-weight:600}
           .hero{display:flex;flex-direction:column;align-items:center;gap:10px;
-                padding:26px 0 22px;text-align:center}
+                padding:30px 20px 26px;text-align:center;border-radius:26px;margin:0 0 18px;
+                background:rgba(255,255,255,.55);
+                -webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
+                border:1px solid rgba(255,255,255,.65);
+                box-shadow:0 8px 32px rgba(95,72,189,.10)}
           .monogram{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;
                     background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff;
                     font-size:26px;font-weight:800;box-shadow:var(--badge-shadow)}

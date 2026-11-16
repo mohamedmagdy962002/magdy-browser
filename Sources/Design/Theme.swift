@@ -37,6 +37,21 @@ enum Theme {
         (t.userInterfaceStyle == .dark ? UIColor(hex: 0x13141B) : UIColor(hex: 0xFFFFFF)).withAlphaComponent(0.94)
     }
 
+    // MARK: - Liquid Glass (iOS 26 style)
+
+    /// Frosted liquid-glass surface: system blur material + specular white edge.
+    /// Content views are added ON TOP of the returned effect view.
+    static func liquidGlassView(corner: CGFloat) -> UIVisualEffectView {
+        let glass = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        glass.layer.cornerRadius = corner
+        glass.layer.cornerCurve = .continuous
+        glass.layer.borderWidth = 1
+        // cgColor resolves once — a mid alpha reads as glass in both modes.
+        glass.layer.borderColor = UIColor(white: 1, alpha: 0.55).cgColor
+        glass.clipsToBounds = true
+        return glass
+    }
+
     /// App theme: MASTER light by default, forced light or forced dark. Forced
     /// styles are applied per window in RootViewController.
     static var forcedStyle: UIUserInterfaceStyle {

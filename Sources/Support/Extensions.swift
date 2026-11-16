@@ -9,6 +9,8 @@ extension Notification.Name {
     static let magdyNightModeChanged = Notification.Name("com.magdy.nightModeChanged")
     /// Posted when the theme setting changes.
     static let magdyThemeChanged = Notification.Name("com.magdy.themeChanged")
+    /// Fired when the user switches the search bar between top and bottom.
+    static let magdyOmniboxChanged = Notification.Name("com.magdy.omniboxChanged")
 }
 
 enum UserDefaultsKey {
@@ -18,6 +20,8 @@ enum UserDefaultsKey {
     static let defaultPrivate = "magdy.defaultPrivate"
     static let favorites = "magdy.favorites"
     static let language = "magdy.language"
+    /// true = omnibox docked at the bottom (Aloha-style), false = top (default).
+    static let omniboxBottomKey = "magdy.omniboxBottom"
 
     static func bool(_ key: String, default fallback: Bool) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? fallback

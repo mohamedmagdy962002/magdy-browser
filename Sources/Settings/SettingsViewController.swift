@@ -7,14 +7,14 @@ final class SettingsViewController: UITableViewController {
         case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache
         case filterLists, customFilterLists, wallpaper, language, about
         case appLock, nightMode, searchEngine, vault, readingList, blockStats, theme, textZoom
-        case memorySaver, backup, forceZoom, homepage, quickSearch
+        case memorySaver, backup, forceZoom, homepage, quickSearch, omniboxPosition
     }
 
     private let sections: [(title: String, rows: [Row])] = [
         (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
         ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault, .memorySaver, .forceZoom, .backup]),
         ("Appearance", [.theme, .nightMode, .wallpaper, .textZoom]),
-        (L.t("language"), [.language, .searchEngine, .quickSearch, .homepage, .readingList]),
+        (L.t("language"), [.language, .searchEngine, .quickSearch, .omniboxPosition, .homepage, .readingList]),
         (L.t("about"), [.about])
     ]
 
@@ -111,6 +111,11 @@ final class SettingsViewController: UITableViewController {
             cell.detailTextLabel?.text = "\"wiki cats\", \"yt cats\", \"a shoes\"…"
             cell.detailTextLabel?.numberOfLines = 1
             cell.accessoryView = makeSwitch(key: String.quickSearchEnabledKey, default: false)
+        case .omniboxPosition:
+            cell.textLabel?.text = "Search Bar Position"
+            let bottom = UserDefaults.standard.bool(forKey: String.omniboxBottomKey)
+            cell.detailTextLabel?.text = bottom ? "Bottom" : "Top"
+            cell.accessoryType = .disclosureIndicator
         case .homepage:
             cell.textLabel?.text = "Homepage"
             cell.accessoryType = .disclosureIndicator
@@ -163,6 +168,8 @@ final class SettingsViewController: UITableViewController {
             present(navigation, animated: true)
         case .searchEngine:
             chooseSearchEngine()
+        case .omniboxPosition:
+            chooseOmniboxPosition()
         case .homepage:
             chooseHomepage()
         case .vault:
@@ -263,6 +270,29 @@ final class SettingsViewController: UITableViewController {
             popover.sourceView = tableView.cellForRow(at: IndexPath(row: 0, section: 3))
         }
         present(sheet, animated: true)
+    }
+
+    /// Search bar docked top or bottom — applied live in the browser.
+    private func chooseOmniboxPosition() {
+        let sheet = UIAlertController(title: "Search Bar Position", message: nil, preferredStyle: .actionSheet)
+        let bottom = UserDefaults.standard.bool(forKey: String.omniboxBottomKey)
+        sheet.addAction(UIAlertAction(title: "Top", style: .default) { _ in
+            self.setPosition(bottom: false)
+        })
+        sheet.addAction(UIAlertAction(title: "Bottom", style: .default) { _ in
+            self.setPosition(bottom: true)
+        })
+        sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 0, section: 3))
+        }
+        present(sheet, animated: true)
+    }
+
+    private func setPosition(bottom: Bool) {
+        UserDefaults.standard.set(bottom, forKey: String.omniboxBottomKey)
+        NotificationCenter.default.post(name: .magdyOmniboxChanged, object: nil)
+        tableView.reloadData()
     }
 
     private func chooseTheme() {

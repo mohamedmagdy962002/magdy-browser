@@ -22,6 +22,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private let playerBanner = PlayerSessionBanner()
     private var bannerObserver: NSObjectProtocol?
     private var downloadsObserver: NSObjectProtocol?
+    private var omniboxObserver: NSObjectProtocol?
+    /// Position anchor sets swapped by the "Search Bar Position" setting.
+    private var topConstraints: [NSLayoutConstraint] = []
+    private var bottomConstraints: [NSLayoutConstraint] = []
     private let backButton = UIButton(type: .system)
     private let forwardButton = UIButton(type: .system)
     private let downloadFAB = UIButton(type: .system)
@@ -128,9 +132,13 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         tabButton.tintColor = Theme.textPrimary
         tabButton.addTarget(self, action: #selector(tabsTapped), for: .touchUpInside)
 
+        // Periwinkle glass accent circle for "new tab" (Stitch Liquid ref).
         let newTabButton = UIButton(type: .system)
         newTabButton.setImage(UIImage(systemName: "plus"), for: .normal)
-        newTabButton.tintColor = Theme.textPrimary
+        newTabButton.tintColor = .white
+        newTabButton.backgroundColor = Theme.primary
+        newTabButton.layer.cornerRadius = 15
+        newTabButton.layer.cornerCurve = .continuous
         newTabButton.addTarget(self, action: #selector(newTabTapped), for: .touchUpInside)
 
         let menuButton = self.menuButton
@@ -159,22 +167,24 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         downloadFAB.translatesAutoresizingMaskIntoConstraints = false
         downloadFAB.isHidden = true
 
-        omnibox.backgroundColor = Theme.card
-        omnibox.layer.cornerRadius = Theme.corner
+        // Liquid glass skin: frosted blur under the address row.
+        omnibox.backgroundColor = .clear
+        omnibox.layer.cornerRadius = 26
         omnibox.layer.cornerCurve = .continuous
-        omnibox.layer.borderWidth = 1
-        omnibox.layer.borderColor = Theme.hairline.cgColor
+        omnibox.clipsToBounds = true
+        let omniboxGlass = Theme.liquidGlassView(corner: 26)
+        omnibox.addSubview(omniboxGlass)
         omnibox.translatesAutoresizingMaskIntoConstraints = false
-        Theme.floatingShadow(omnibox)
 
         let toolbarChrome = UIView()
-        toolbarChrome.backgroundColor = Theme.glass
+        // Liquid glass skin for the floating dock.
+        toolbarChrome.backgroundColor = .clear
         toolbarChrome.layer.cornerRadius = 26
         toolbarChrome.layer.cornerCurve = .continuous
-        toolbarChrome.layer.borderWidth = 1
-        toolbarChrome.layer.borderColor = Theme.hairline.cgColor
+        toolbarChrome.clipsToBounds = true
+        let toolbarGlass = Theme.liquidGlassView(corner: 26)
+        toolbarChrome.addSubview(toolbarGlass)
         toolbarChrome.translatesAutoresizingMaskIntoConstraints = false
-        Theme.floatingShadow(toolbarChrome)
 
         view.addSubview(omnibox)
         omnibox.addSubview(addressRow)
@@ -183,6 +193,17 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         view.addSubview(toolbarChrome)
         toolbarChrome.addSubview(toolbar)
         view.addSubview(downloadFAB)
+
+        NSLayoutConstraint.activate([
+            omniboxGlass.topAnchor.constraint(equalTo: omnibox.topAnchor),
+            omniboxGlass.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor),
+            omniboxGlass.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor),
+            omniboxGlass.bottomAnchor.constraint(equalTo: omnibox.bottomAnchor),
+
+            toolbarGlass.topAnchor.constraint(equalTo: toolbarChrome.topAnchor),
+            toolbarGlass.leadingAnchor.constraint(equalTo: toolbarChrome.leadingAnchor),
+            toolbarGlass.trailingAnchor.constraint(equalTo: toolbarChrome.trailingAnchor),
+            toolbarGlass.bottomAnchor.constraint(equalTo: toolbarChrome.bottomAnchor),
 
         // Omnibox suggestions overlay.
         suggestionsTable.backgroundColor = Theme.card
@@ -201,8 +222,29 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
         view.addSubview(playerBanner)
 
+        // Position-dependent anchors: two full sets, swapped by the
+        // "Search Bar Position" setting (omnibox top = default, bottom = Aloha).
+        let top = UserDefaults.standard.bool(forKey: String.omniboxBottomKey) == false
+        let omniboxTop = omnibox.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
+        let omniboxBottom = omnibox.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -8)
+        let progressTop = progressBar.topAnchor.constraint(equalTo: omnibox.bottomAnchor)
+        let progressTopAlt = progressBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
+        let webTop = webContainer.topAnchor.constraint(equalTo: progressBar.bottomAnchor)
+        let webTopAlt = webContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
+        let webBottom = webContainer.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor)
+        let webBottomAlt = webContainer.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -2)
+        let suggestionsTop = suggestionsTable.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 8)
+        let suggestionsBottom = suggestionsTable.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -8)
+        let bannerTop = playerBanner.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 6)
+        let bannerBottom = playerBanner.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -6)
+        let fabBottom = downloadFAB.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -16)
+        let fabBottomAlt = downloadFAB.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -16)
+        topConstraints = [omniboxTop, progressTop, webTop, webBottom, suggestionsTop, bannerTop, fabBottom]
+        bottomConstraints = [omniboxBottom, progressTopAlt, webTopAlt, webBottomAlt, suggestionsBottom, bannerBottom, fabBottomAlt]
+        NSLayoutConstraint.activate(top ? topConstraints : bottomConstraints)
+
         NSLayoutConstraint.activate([
-            omnibox.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            // Static omnibox sizing (position anchors are in the top/bottom sets).
             omnibox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             omnibox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             omnibox.heightAnchor.constraint(equalToConstant: 52),
@@ -212,10 +254,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             addressRow.centerYAnchor.constraint(equalTo: omnibox.centerYAnchor),
             addressRow.heightAnchor.constraint(equalToConstant: 36),
 
-            downloadFAB.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -16),
             downloadFAB.centerXAnchor.constraint(equalTo: view.centerXAnchor),
 
-            progressBar.topAnchor.constraint(equalTo: omnibox.bottomAnchor),
             progressBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             progressBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             progressBar.heightAnchor.constraint(equalToConstant: 2),
@@ -230,17 +270,13 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             toolbar.topAnchor.constraint(equalTo: toolbarChrome.topAnchor),
             toolbar.bottomAnchor.constraint(equalTo: toolbarChrome.bottomAnchor),
 
-            webContainer.topAnchor.constraint(equalTo: progressBar.bottomAnchor),
             webContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            webContainer.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor),
 
-            suggestionsTable.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 8),
             suggestionsTable.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             suggestionsTable.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             suggestionsTable.heightAnchor.constraint(lessThanOrEqualToConstant: 260),
 
-            playerBanner.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 6),
             playerBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             playerBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             playerBanner.heightAnchor.constraint(equalToConstant: 46)
@@ -276,6 +312,19 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         ) { [weak self] _ in
             self?.playerBanner.refreshDownloadBadge()
         }
+        omniboxObserver = NotificationCenter.default.addObserver(
+            forName: .magdyOmniboxChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.applyOmniboxLayout()
+        }
+    }
+
+    /// Swaps the omnibox between docked-top and docked-bottom layouts live.
+    private func applyOmniboxLayout() {
+        let bottom = UserDefaults.standard.bool(forKey: String.omniboxBottomKey)
+        NSLayoutConstraint.deactivate(bottom ? topConstraints : bottomConstraints)
+        NSLayoutConstraint.activate(bottom ? bottomConstraints : topConstraints)
+        view.layoutIfNeeded()
     }
 
     private func makeMenu() -> UIMenu {
