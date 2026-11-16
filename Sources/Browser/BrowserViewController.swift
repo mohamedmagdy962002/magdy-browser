@@ -26,6 +26,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     /// Position anchor sets swapped by the "Search Bar Position" setting.
     private var topConstraints: [NSLayoutConstraint] = []
     private var bottomConstraints: [NSLayoutConstraint] = []
+    /// Frosted card behind the suggestion rows.
+    private var suggestionsGlass: UIVisualEffectView?
     private let backButton = UIButton(type: .system)
     private let forwardButton = UIButton(type: .system)
     private let downloadFAB = UIButton(type: .system)
@@ -144,8 +146,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let menuButton = self.menuButton
         menuButton.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
         menuButton.tintColor = Theme.primary
-        menuButton.showsMenuAsPrimaryAction = true
-        menuButton.menu = makeMenu()
+        menuButton.addTarget(self, action: #selector(menuTapped), for: .touchUpInside)
 
         toolbar.addArrangedSubview(backButton)
         toolbar.addArrangedSubview(forwardButton)
@@ -206,17 +207,22 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             toolbarGlass.bottomAnchor.constraint(equalTo: toolbarChrome.bottomAnchor)
         ])
 
-        // Omnibox suggestions overlay.
-        suggestionsTable.backgroundColor = Theme.card
-        suggestionsTable.layer.cornerRadius = Theme.corner
+        // Omnibox suggestions overlay — frosted glass card behind the rows.
+        let suggestionsGlass = Theme.liquidGlassView(corner: 22)
+        self.suggestionsGlass = suggestionsGlass
+        suggestionsTable.backgroundColor = .clear
+        suggestionsTable.layer.cornerRadius = 22
         suggestionsTable.layer.cornerCurve = .continuous
         suggestionsTable.separatorStyle = .none
         suggestionsTable.register(UITableViewCell.self, forCellReuseIdentifier: "suggestion")
         suggestionsTable.dataSource = self
         suggestionsTable.delegate = self
         suggestionsTable.isHidden = true
+        suggestionsGlass?.isHidden = true
         suggestionsTable.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(suggestionsTable)
+        suggestionsGlass.translatesAutoresizingMaskIntoConstraints = false
+        view.insertSubview(suggestionsGlass, belowSubview: suggestionsTable)
         view.bringSubviewToFront(suggestionsTable)
 
         Theme.fabShadow(downloadFAB)
@@ -280,7 +286,12 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
             playerBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             playerBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            playerBanner.heightAnchor.constraint(equalToConstant: 46)
+            playerBanner.heightAnchor.constraint(equalToConstant: 46),
+
+            suggestionsGlass.topAnchor.constraint(equalTo: suggestionsTable.topAnchor),
+            suggestionsGlass.leadingAnchor.constraint(equalTo: suggestionsTable.leadingAnchor),
+            suggestionsGlass.trailingAnchor.constraint(equalTo: suggestionsTable.trailingAnchor),
+            suggestionsGlass.bottomAnchor.constraint(equalTo: suggestionsTable.bottomAnchor)
         ])
 
         // Swipe on the toolbar switches tabs.
@@ -326,6 +337,13 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         NSLayoutConstraint.deactivate(bottom ? topConstraints : bottomConstraints)
         NSLayoutConstraint.activate(bottom ? bottomConstraints : topConstraints)
         view.layoutIfNeeded()
+    }
+
+    /// ⋯ tap → liquid-glass action panel. Items rebuilt every tap so dynamic
+    /// titles (Night Mode, per-site ads) are always current.
+    @objc private func menuTapped() {
+        let sheet = GlassMenuSheet(actions: makeMenu().children.compactMap { $0 as? UIAction })
+        present(sheet, animated: true)
     }
 
     private func makeMenu() -> UIMenu {
@@ -755,14 +773,6 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         if !addressField.isFirstResponder {
             addressField.text = tab.displayURL?.absoluteString ?? ""
         }
-        // Rebuild on every load — menu actions (per-site ad toggle) capture the
-        // current page's host, so a stale menu would flip the wrong site's setting.
-        menuButton.menu = makeMenu()
-    }
-
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        menuButton.menu = makeMenu() // rebuild so toggle titles (Night Mode) are current
     }
 
     private func closeAllTabs() {
@@ -970,6 +980,7 @@ extension BrowserViewController {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         suggestionsTable.isHidden = true
+        suggestionsGlass?.isHidden = true
         guard let tab = activeTab else { return true }
         let input = textField.text ?? ""
         if let url = input.magdyNavigable {
@@ -986,6 +997,7 @@ extension BrowserViewController {
 
     func textFieldDidEndEditing(_ textField: UITextField) {
         suggestionsTable.isHidden = true
+        suggestionsGlass?.isHidden = true
         // Restore the current URL when the user dismisses the keyboard without navigating.
         if (textField.text ?? "").isEmpty {
             textField.text = activeTab?.webView.url?.absoluteString ?? ""
@@ -1001,6 +1013,7 @@ extension BrowserViewController {
         let query = current.trimmingCharacters(in: .whitespaces)
         guard query.count >= 2, !current.contains(".") && !current.contains(" ") else {
             suggestionsTable.isHidden = true
+        suggestionsGlass?.isHidden = true
             return true
         }
         SearchEngine.suggestions(for: query) { [weak self] results in
@@ -1009,6 +1022,7 @@ extension BrowserViewController {
             self.suggestions = results
             self.suggestionsTable.reloadData()
             self.suggestionsTable.isHidden = results.isEmpty
+            self.suggestionsGlass?.isHidden = results.isEmpty
         }
         return true
     }
@@ -1042,6 +1056,7 @@ extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {
         addressField.text = query
         addressField.resignFirstResponder()
         suggestionsTable.isHidden = true
+        suggestionsGlass?.isHidden = true
         guard let tab = activeTab, let url = SearchEngine.effectiveSearchURL(for: query) else { return }
         tab.load(url: url)
     }
