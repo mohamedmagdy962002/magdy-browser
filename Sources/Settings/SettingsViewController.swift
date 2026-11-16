@@ -113,7 +113,7 @@ final class SettingsViewController: UITableViewController {
             cell.accessoryView = makeSwitch(key: String.quickSearchEnabledKey, default: false)
         case .omniboxPosition:
             cell.textLabel?.text = "Search Bar Position"
-            let bottom = UserDefaults.standard.bool(forKey: String.omniboxBottomKey)
+            let bottom = UserDefaults.standard.bool(forKey: UserDefaultsKey.omniboxBottomKey)
             cell.detailTextLabel?.text = bottom ? "Bottom" : "Top"
             cell.accessoryType = .disclosureIndicator
         case .homepage:
@@ -275,7 +275,7 @@ final class SettingsViewController: UITableViewController {
     /// Search bar docked top or bottom — applied live in the browser.
     private func chooseOmniboxPosition() {
         let sheet = UIAlertController(title: "Search Bar Position", message: nil, preferredStyle: .actionSheet)
-        let bottom = UserDefaults.standard.bool(forKey: String.omniboxBottomKey)
+        let bottom = UserDefaults.standard.bool(forKey: UserDefaultsKey.omniboxBottomKey)
         sheet.addAction(UIAlertAction(title: "Top", style: .default) { _ in
             self.setPosition(bottom: false)
         })
@@ -290,7 +290,7 @@ final class SettingsViewController: UITableViewController {
     }
 
     private func setPosition(bottom: Bool) {
-        UserDefaults.standard.set(bottom, forKey: String.omniboxBottomKey)
+        UserDefaults.standard.set(bottom, forKey: UserDefaultsKey.omniboxBottomKey)
         NotificationCenter.default.post(name: .magdyOmniboxChanged, object: nil)
         tableView.reloadData()
     }

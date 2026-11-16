@@ -203,7 +203,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             toolbarGlass.topAnchor.constraint(equalTo: toolbarChrome.topAnchor),
             toolbarGlass.leadingAnchor.constraint(equalTo: toolbarChrome.leadingAnchor),
             toolbarGlass.trailingAnchor.constraint(equalTo: toolbarChrome.trailingAnchor),
-            toolbarGlass.bottomAnchor.constraint(equalTo: toolbarChrome.bottomAnchor),
+            toolbarGlass.bottomAnchor.constraint(equalTo: toolbarChrome.bottomAnchor)
+        ])
 
         // Omnibox suggestions overlay.
         suggestionsTable.backgroundColor = Theme.card
@@ -224,7 +225,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
         // Position-dependent anchors: two full sets, swapped by the
         // "Search Bar Position" setting (omnibox top = default, bottom = Aloha).
-        let top = UserDefaults.standard.bool(forKey: String.omniboxBottomKey) == false
+        let top = UserDefaults.standard.bool(forKey: UserDefaultsKey.omniboxBottomKey) == false
         let omniboxTop = omnibox.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
         let omniboxBottom = omnibox.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -8)
         let progressTop = progressBar.topAnchor.constraint(equalTo: omnibox.bottomAnchor)
@@ -321,7 +322,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     /// Swaps the omnibox between docked-top and docked-bottom layouts live.
     private func applyOmniboxLayout() {
-        let bottom = UserDefaults.standard.bool(forKey: String.omniboxBottomKey)
+        let bottom = UserDefaults.standard.bool(forKey: UserDefaultsKey.omniboxBottomKey)
         NSLayoutConstraint.deactivate(bottom ? topConstraints : bottomConstraints)
         NSLayoutConstraint.activate(bottom ? bottomConstraints : topConstraints)
         view.layoutIfNeeded()
