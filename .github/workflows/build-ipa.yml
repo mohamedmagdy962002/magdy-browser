@@ -49,3 +49,41 @@ jobs:
           name: MagdyBrowser-ipa
           path: build/MagdyBrowser-unsigned.ipa
           if-no-files-found: error
+
+  simulator:
+    # Online runtime: boots an iOS Simulator, launches the app, taps through
+    # the main screens and uploads real screenshots for inspection.
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Run UI screenshot tests
+        run: |
+          xcodebuild test \
+            -project MagdyBrowser.xcodeproj \
+            -scheme Screenshots \
+            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -derivedDataPath build/TestData \
+            CODE_SIGNING_ALLOWED=NO
+        env:
+          SHOT_DIR: ${{ github.workspace }}/build/shots
+
+      - name: Collect screenshots
+        if: always()
+        run: ls -la build/shots || true
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-screenshots
+          path: build/shots
+          if-no-files-found: warn

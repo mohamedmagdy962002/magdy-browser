@@ -144,3 +144,26 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.magdy.browser.action
         SKIP_INSTALL: YES
         APPLICATION_EXTENSION_API_ONLY: YES
+
+  MagdyBrowserUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: Tests/UITests
+    dependencies:
+      - target: MagdyBrowser
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.magdy.browser.uitests
+        TEST_TARGET_NAME: MagdyBrowser
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  Screenshots:
+    build:
+      targets:
+        MagdyBrowser: all
+    test:
+      config: Debug
+      targets:
+        - MagdyBrowserUITests
