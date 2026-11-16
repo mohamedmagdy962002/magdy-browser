@@ -86,7 +86,9 @@ final class DownloadOptionsSheet: UIViewController {
         startButton.layer.cornerCurve = .continuous
         startButton.translatesAutoresizingMaskIntoConstraints = false
         startButton.heightAnchor.constraint(equalToConstant: 50).isActive = true
-        Theme.applyGradient(to: startButton)
+        // Solid periwinkle — the gradient helper sized to zero bounds and left
+        // the button invisible on this sheet.
+        startButton.backgroundColor = Theme.primary
         Theme.fabShadow(startButton)
         startButton.addTarget(self, action: #selector(startTapped), for: .touchUpInside)
 

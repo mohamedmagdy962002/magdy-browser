@@ -1,7 +1,8 @@
 import UIKit
 import WebKit
 
-/// Grid tab switcher with live page snapshots, close actions and reopen.
+/// Grid tab switcher: normal + private sections, card close buttons,
+/// swipe-left-to-close, grid search, and reopen.
 final class TabGridViewController: UICollectionViewController {
 
     struct ClosedTab {
@@ -21,7 +22,21 @@ final class TabGridViewController: UICollectionViewController {
     private var searchController: UISearchController!
     /// Nil = all tabs; non-nil = filtered by the grid search field.
     private var filteredTabs: [BrowserTab]?
-    private var visibleTabs: [BrowserTab] { filteredTabs ?? store.tabs }
+    private var sourceTabs: [BrowserTab] { filteredTabs ?? store.tabs }
+
+    /// Normal tabs first, private tabs in their own section below.
+    private var sections: [(title: String, tabs: [BrowserTab])] {
+        var result: [(String, [BrowserTab])] = []
+        let normal = sourceTabs.filter { !$0.isPrivate }
+        let privateTabs = sourceTabs.filter { $0.isPrivate }
+        if !normal.isEmpty || privateTabs.isEmpty { result.append(("Tabs", normal)) }
+        if !privateTabs.isEmpty { result.append(("Private Tabs", privateTabs)) }
+        return result
+    }
+
+    private func tab(at indexPath: IndexPath) -> BrowserTab {
+        sections[indexPath.section].tabs[indexPath.item]
+    }
 
     init(
         store: TabStore,
@@ -41,7 +56,8 @@ final class TabGridViewController: UICollectionViewController {
         layout.itemSize = CGSize(width: 170, height: 210)
         layout.minimumInteritemSpacing = 12
         layout.minimumLineSpacing = 12
-        layout.sectionInset = UIEdgeInsets(top: 16, left: 16, bottom: 80, right: 16)
+        layout.sectionInset = UIEdgeInsets(top: 12, left: 16, bottom: 80, right: 16)
+        layout.headerReferenceSize = CGSize(width: 0, height: 30)
         super.init(collectionViewLayout: layout)
     }
 
@@ -54,6 +70,7 @@ final class TabGridViewController: UICollectionViewController {
         collectionView.backgroundColor = Theme.canvas
         collectionView.alwaysBounceVertical = true
         collectionView.register(TabCardCell.self, forCellWithReuseIdentifier: "cell")
+        collectionView.register(TabSectionHeader.self, forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader, withReuseIdentifier: "header")
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "plus"), style: .plain, target: self, action: #selector(newTabTapped)
         )
@@ -79,20 +96,23 @@ final class TabGridViewController: UICollectionViewController {
         dismiss(animated: true)
     }
 
+    override func numberOfSections(in collectionView: UICollectionView) -> Int {
+        sections.count
+    }
+
     override func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        visibleTabs.count
+        sections[section].tabs.count
     }
 
     override func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "cell", for: indexPath) as! TabCardCell
-        let tab = visibleTabs[indexPath.item]
-        cell.titleLabel.text = tab.title
-        cell.hostLabel.text = tab.displayURL?.host ?? "Start page"
-        cell.setPrivate(tab.isPrivate)
+        let tab = tab(at: indexPath)
+        cell.configure(title: tab.title, host: tab.displayURL?.host ?? "Start page", isPrivate: tab.isPrivate)
+        cell.onClose = { [weak self] in self?.closeTab(tab) }
         // Violet border marks the browser's current tab.
         let isActive = tab === activeTab
-        cell.layer.borderWidth = isActive ? 2 : 1
-        cell.layer.borderColor = isActive
+        cell.cardContent.layer.borderWidth = isActive ? 2 : 1
+        cell.cardContent.layer.borderColor = isActive
             ? Theme.primary.cgColor
             : Theme.hairline.cgColor
         tab.webView.takeSnapshot(with: nil) { image, _ in
@@ -104,27 +124,39 @@ final class TabGridViewController: UICollectionViewController {
     }
 
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        onActivate(visibleTabs[indexPath.item])
+        onActivate(tab(at: indexPath))
         dismiss(animated: true)
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        viewForSupplementaryElementOfKind kind: String,
+        at indexPath: IndexPath
+    ) -> UICollectionReusableView {
+        let header = collectionView.dequeueReusableSupplementaryView(
+            ofKind: kind, withReuseIdentifier: "header", for: indexPath
+        ) as! TabSectionHeader
+        header.label.text = sections[indexPath.section].title
+        return header
     }
 
     // Implemented without `override`: UICollectionViewController inherits
     // UICollectionViewDelegate conformance, optional methods are plain implementations.
     func collectionView(
         _ collectionView: UICollectionView,
-        trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath
-    ) -> UISwipeActionsConfiguration? {
-        let tab = visibleTabs[indexPath.item]
-        let close = UIContextualAction(style: .destructive, title: "Close") { [weak self] _, _, completion in
-            guard let self else { return }
-            self.onReopen(ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
-            self.store.close(tab)
-            self.onClosed(tab)
-            self.filteredTabs = self.filteredTabs?.filter { $0 !== tab }
-            collectionView.reloadData()
-            completion(true)
-        }
-        return UISwipeActionsConfiguration(actions: [close])
+        layout collectionViewLayout: UICollectionViewLayout,
+        referenceSizeForHeaderInSection section: Int
+    ) -> CGFloat {
+        // Single "Tabs" section needs no label — cards explain themselves.
+        (sections.count == 1 && sections[0].title == "Tabs") ? 0 : 30
+    }
+
+    private func closeTab(_ tab: BrowserTab) {
+        onReopen(ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
+        store.close(tab)
+        onClosed(tab)
+        filteredTabs = filteredTabs?.filter { $0 !== tab }
+        collectionView.reloadData()
     }
 
     override func collectionView(
@@ -132,16 +164,11 @@ final class TabGridViewController: UICollectionViewController {
         contextMenuConfigurationForItemAt indexPath: IndexPath,
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        let tab = visibleTabs[indexPath.item]
-        return UIContextMenuConfiguration(actionProvider: { _ in
+        let tab = tab(at: indexPath)
+        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
             UIMenu(children: [
-                UIAction(title: "Close Tab", image: UIImage(systemName: "xmark")) { [weak self] _ in
-                    guard let self else { return }
-                    self.onReopen(ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
-                    self.store.close(tab)
-                    self.onClosed(tab)
-                    self.filteredTabs = self.filteredTabs?.filter { $0 !== tab }
-                    collectionView.reloadData()
+                UIAction(title: "Close Tab", image: UIImage(systemName: "xmark")) { _ in
+                    self?.closeTab(tab)
                 },
                 UIAction(title: "Close All Tabs", image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in
                     guard let self else { return }
@@ -169,22 +196,64 @@ extension TabGridViewController: UISearchResultsUpdating {
     }
 }
 
+/// Small caps section label above the card group.
+final class TabSectionHeader: UICollectionReusableView {
+    let label = UILabel()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        label.font = Theme.headline(13, weight: .semibold)
+        label.textColor = Theme.textSecondary
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+/// Card with snapshot, title, close button and left-swipe-to-close.
 final class TabCardCell: UICollectionViewCell {
+    /// Swipeable, borderable card face (the grid draws active borders here).
+    let cardContent = UIView()
     let snapshotView = UIImageView()
     let titleLabel = UILabel()
     let hostLabel = UILabel()
     let privateBadge = UIImageView(image: UIImage(systemName: "eye.slash.fill"))
+    private let closeButton = UIButton(type: .system)
+    private let swipeReveal = UIView()
+    private let trashIcon = UIImageView(image: UIImage(systemName: "trash.fill"))
+    var onClose: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        backgroundColor = .clear
 
-        backgroundColor = Theme.card
-        layer.cornerRadius = Theme.corner
-        layer.cornerCurve = .continuous
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.08
-        layer.shadowRadius = 8
-        layer.shadowOffset = CGSize(width: 0, height: 3)
+        // Red reveal layer behind the card face.
+        swipeReveal.backgroundColor = UIColor.systemRed.withAlphaComponent(0.92)
+        swipeReveal.layer.cornerRadius = Theme.corner
+        swipeReveal.layer.cornerCurve = .continuous
+        swipeReveal.isHidden = true
+        trashIcon.tintColor = .white
+        trashIcon.contentMode = .center
+        swipeReveal.addSubview(trashIcon)
+        swipeReveal.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(swipeReveal)
+
+        // Card face: holds everything that slides on swipe.
+        cardContent.backgroundColor = Theme.card
+        cardContent.layer.cornerRadius = Theme.corner
+        cardContent.layer.cornerCurve = .continuous
+        cardContent.layer.shadowColor = UIColor.black.cgColor
+        cardContent.layer.shadowOpacity = 0.08
+        cardContent.layer.shadowRadius = 8
+        cardContent.layer.shadowOffset = CGSize(width: 0, height: 3)
+        cardContent.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(cardContent)
 
         snapshotView.contentMode = .scaleAspectFill
         snapshotView.clipsToBounds = true
@@ -199,37 +268,123 @@ final class TabCardCell: UICollectionViewCell {
         hostLabel.font = Theme.body(11)
         hostLabel.textColor = Theme.textSecondary
         hostLabel.numberOfLines = 1
-        privateBadge.tintColor = Theme.primary
-        privateBadge.isHidden = true
-        privateBadge.translatesAutoresizingMaskIntoConstraints = false
 
         let textStack = UIStackView(arrangedSubviews: [titleLabel, hostLabel])
         textStack.axis = .vertical
         textStack.spacing = 2
         textStack.translatesAutoresizingMaskIntoConstraints = false
 
-        contentView.addSubview(snapshotView)
-        contentView.addSubview(textStack)
-        contentView.addSubview(privateBadge)
+        privateBadge.tintColor = Theme.primary
+        privateBadge.isHidden = true
+        privateBadge.translatesAutoresizingMaskIntoConstraints = false
+
+        // Floating ✕ on the snapshot's top-right corner.
+        closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+        closeButton.tintColor = Theme.textPrimary
+        closeButton.backgroundColor = Theme.card
+        closeButton.layer.cornerRadius = 13
+        closeButton.layer.cornerCurve = .continuous
+        closeButton.layer.shadowColor = UIColor.black.cgColor
+        closeButton.layer.shadowOpacity = 0.15
+        closeButton.layer.shadowRadius = 4
+        closeButton.layer.shadowOffset = CGSize(width: 0, height: 1)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+
+        cardContent.addSubview(snapshotView)
+        cardContent.addSubview(textStack)
+        cardContent.addSubview(privateBadge)
+        cardContent.addSubview(closeButton)
+
         NSLayoutConstraint.activate([
-            snapshotView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
-            snapshotView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
-            snapshotView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
-            snapshotView.heightAnchor.constraint(equalTo: contentView.heightAnchor, multiplier: 0.68),
+            swipeReveal.topAnchor.constraint(equalTo: contentView.topAnchor),
+            swipeReveal.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            swipeReveal.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            swipeReveal.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            cardContent.topAnchor.constraint(equalTo: contentView.topAnchor),
+            cardContent.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            cardContent.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            cardContent.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            trashIcon.trailingAnchor.constraint(equalTo: swipeReveal.trailingAnchor, constant: -18),
+            trashIcon.centerYAnchor.constraint(equalTo: swipeReveal.centerYAnchor),
+            trashIcon.widthAnchor.constraint(equalToConstant: 22),
+            trashIcon.heightAnchor.constraint(equalToConstant: 22),
+
+            snapshotView.topAnchor.constraint(equalTo: cardContent.topAnchor, constant: 8),
+            snapshotView.leadingAnchor.constraint(equalTo: cardContent.leadingAnchor, constant: 8),
+            snapshotView.trailingAnchor.constraint(equalTo: cardContent.trailingAnchor, constant: -8),
+            snapshotView.heightAnchor.constraint(equalTo: cardContent.heightAnchor, multiplier: 0.68),
 
             textStack.topAnchor.constraint(equalTo: snapshotView.bottomAnchor, constant: 6),
-            textStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 10),
-            textStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -10),
+            textStack.leadingAnchor.constraint(equalTo: cardContent.leadingAnchor, constant: 10),
+            textStack.trailingAnchor.constraint(equalTo: cardContent.trailingAnchor, constant: -10),
 
             privateBadge.topAnchor.constraint(equalTo: snapshotView.topAnchor, constant: 6),
-            privateBadge.trailingAnchor.constraint(equalTo: snapshotView.trailingAnchor, constant: -6)
+            privateBadge.trailingAnchor.constraint(equalTo: snapshotView.trailingAnchor, constant: -6),
+
+            closeButton.topAnchor.constraint(equalTo: snapshotView.topAnchor, constant: 4),
+            closeButton.trailingAnchor.constraint(equalTo: snapshotView.trailingAnchor, constant: -4),
+            closeButton.widthAnchor.constraint(equalToConstant: 26),
+            closeButton.heightAnchor.constraint(equalToConstant: 26)
         ])
+
+        // Horizontal left-swipe on the card face reveals the red close zone;
+        // vertical movement stays with the collection's scroll.
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(swiped(_:)))
+        cardContent.addGestureRecognizer(pan)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func setPrivate(_ isPrivate: Bool) {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if let pan = gestureRecognizer as? UIPanGestureRecognizer {
+            let velocity = pan.velocity(in: self)
+            return abs(velocity.x) > abs(velocity.y) && velocity.x < 0
+        }
+        return true
+    }
+
+    @objc private func closeTapped() { onClose?() }
+
+    @objc private func swiped(_ gesture: UIPanGestureRecognizer) {
+        switch gesture.state {
+        case .changed:
+            let offset = max(min(0, gesture.translation(in: self).x), -96)
+            cardContent.transform = CGAffineTransform(translationX: offset, y: 0)
+            swipeReveal.isHidden = false
+        case .ended, .cancelled:
+            let x = gesture.translation(in: self).x
+            if x < -70 {
+                onClose?()
+            } else {
+                UIView.animate(withDuration: 0.25, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0, options: []) {
+                    self.cardContent.transform = .identity
+                }
+                swipeReveal.isHidden = true
+            }
+        default:
+            break
+        }
+    }
+
+    func configure(title: String, host: String?, isPrivate: Bool) {
+        titleLabel.text = title
+        hostLabel.text = host ?? "Start page"
         privateBadge.isHidden = !isPrivate
+        cardContent.transform = .identity
+        swipeReveal.isHidden = true
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        snapshotView.image = nil
+        onClose = nil
+        cardContent.layer.borderColor = Theme.hairline.cgColor
+        cardContent.layer.borderWidth = 1
+        cardContent.transform = .identity
+        swipeReveal.isHidden = true
     }
 }

@@ -59,8 +59,10 @@ enum SpeedDialPage {
             return """
             <a class="tile" href="\(url)">
               <span class="badge" style="background:\(tile.color)">\(escape(tile.letter))</span>
-              <span class="label">\(escape(tile.title))</span>
-              <span class="host">\(escape(URL(string: tile.url)?.host ?? tile.url))</span>
+              <span class="tcol">
+                <span class="label">\(escape(tile.title))</span>
+                <span class="host">\(escape(URL(string: tile.url)?.host ?? tile.url))</span>
+              </span>
             </a>
             """
         }.joined(separator: "\n")
@@ -77,8 +79,7 @@ enum SpeedDialPage {
         ].map { icon, label, action in
             """
             <button class="qa" onclick="webkit.messageHandlers.magdyAction.postMessage('\(action)')">
-              <span class="qa-circle">\(icon)</span>
-              <span class="qa-label">\(label)</span>
+              <span class="qa-ico">\(icon)</span><span>\(label)</span>
             </button>
             """
         }.joined(separator: "\n")
@@ -104,44 +105,45 @@ enum SpeedDialPage {
             .hero{background:rgba(24,25,32,.55);border-color:rgba(255,255,255,.12);
                   box-shadow:0 8px 32px rgba(0,0,0,.35)}
           }
-          body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:20px 24px;
+          body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:16px 18px;
                color:var(--text);-webkit-font-smoothing:antialiased;min-height:100vh;
                \(backgroundStyle)}
-          .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
-          .protected{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;
+          .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+          .protected{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
                      background:var(--qa-bg);border:1px solid var(--qa-border);color:var(--accent-2);
-                     font-size:12px;font-weight:600}
-          .hero{display:flex;flex-direction:column;align-items:center;gap:10px;
-                padding:30px 20px 26px;text-align:center;border-radius:26px;margin:0 0 18px;
+                     font-size:11px;font-weight:600}
+          .hero{display:flex;flex-direction:column;align-items:center;gap:8px;
+                padding:20px 16px 18px;text-align:center;border-radius:24px;margin:0 0 14px;
                 background:rgba(255,255,255,.55);
                 -webkit-backdrop-filter:blur(18px) saturate(1.4);backdrop-filter:blur(18px) saturate(1.4);
                 border:1px solid rgba(255,255,255,.65);
                 box-shadow:0 8px 32px rgba(95,72,189,.10)}
-          .monogram{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+          .monogram{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;
                     background:linear-gradient(135deg,var(--accent-2),var(--accent));color:#fff;
-                    font-size:26px;font-weight:800;box-shadow:var(--badge-shadow)}
-          .wordmark{font-size:30px;font-weight:200;letter-spacing:.28em;margin-right:-.28em;
+                    font-size:22px;font-weight:800;box-shadow:var(--badge-shadow)}
+          .wordmark{font-size:22px;font-weight:200;letter-spacing:.26em;margin-right:-.26em;
                     color:var(--text);text-transform:uppercase}
-          .search-pill{display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;
+          .search-pill{display:flex;align-items:center;gap:7px;padding:8px 16px;border-radius:999px;
                        background:var(--tile);border:1px solid var(--tile-border);
-                       box-shadow:var(--tile-shadow);color:var(--muted);font-size:14px}
+                       box-shadow:var(--tile-shadow);color:var(--muted);font-size:13px}
           h1{font-size:28px;font-weight:800;letter-spacing:-0.4px;margin:0 0 4px}
-          p.note{color:var(--muted);font-size:14px;margin:0 0 18px;text-align:center}
+          p.note{color:var(--muted);font-size:12px;margin:0 0 14px;text-align:center}
           p.empty{color:var(--muted);font-size:14px;text-align:center;padding:40px 0}
-          .qa-row{display:flex;justify-content:space-between;margin:0 2px 20px}
-          .qa{background:none;border:0;padding:0;display:flex;flex-direction:column;align-items:center;gap:6px}
-          .qa-circle{width:56px;height:56px;border-radius:999px;display:flex;align-items:center;justify-content:center;
-                     background:var(--qa-bg);border:1px solid var(--qa-border);font-size:20px;color:var(--accent-2)}
-          .qa-label{font-size:11px;color:var(--muted);font-weight:500}
-          .grid{display:flex;flex-wrap:wrap;gap:14px}
-          .tile{width:calc(33.333% - 10px);background:var(--tile);border:1px solid var(--tile-border);
-                border-radius:16px;padding:16px 10px 14px;
-                text-decoration:none;color:var(--text);display:flex;flex-direction:column;align-items:center;
+          .qa-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:0 0 18px}
+          .qa{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;
+              background:var(--tile);border:1px solid var(--tile-border);box-shadow:var(--tile-shadow);
+              font-size:13px;font-weight:600;color:var(--text)}
+                    .qa-ico{font-size:15px}
+          .grid{display:flex;flex-wrap:wrap;gap:10px}
+          .tile{width:calc(50% - 5px);background:var(--tile);border:1px solid var(--tile-border);
+                border-radius:14px;padding:10px 12px;box-sizing:border-box;
+                text-decoration:none;color:var(--text);display:flex;align-items:center;gap:10px;
                 box-shadow:var(--tile-shadow)}
-          .badge{width:48px;height:48px;border-radius:14px;color:#fff;font-weight:800;font-size:22px;
-                 display:flex;align-items:center;justify-content:center;margin-bottom:10px;
+          .badge{width:40px;height:40px;flex:none;border-radius:12px;color:#fff;font-weight:800;font-size:18px;
+                 display:flex;align-items:center;justify-content:center;
                  box-shadow:var(--badge-shadow)}
-          .label{font-size:13px;font-weight:700;text-align:center;
+          .tcol{display:flex;flex-direction:column;min-width:0;flex:1}
+          .label{font-size:13px;font-weight:700;
                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
           .host{font-size:11px;color:var(--muted);margin-top:2px;
                 overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}

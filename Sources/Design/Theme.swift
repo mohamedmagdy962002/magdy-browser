@@ -39,16 +39,32 @@ enum Theme {
 
     // MARK: - Liquid Glass (iOS 26 style)
 
-    /// Frosted liquid-glass surface: system blur material + specular white edge.
+    /// Frosted liquid-glass surface: blur material + lavender tint + specular edge.
     /// Content views are added ON TOP of the returned effect view.
     static func liquidGlassView(corner: CGFloat) -> UIVisualEffectView {
-        let glass = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        let glass = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
         glass.layer.cornerRadius = corner
         glass.layer.cornerCurve = .continuous
         glass.layer.borderWidth = 1
         // cgColor resolves once — a mid alpha reads as glass in both modes.
-        glass.layer.borderColor = UIColor(white: 1, alpha: 0.55).cgColor
+        glass.layer.borderColor = UIColor(white: 1, alpha: 0.65).cgColor
         glass.clipsToBounds = true
+        // Lavender tint so the capsule still reads over plain white pages.
+        let tint = UIView()
+        tint.backgroundColor = UIColor { t in
+            t.userInterfaceStyle == .dark
+                ? UIColor(white: 0, alpha: 0.10)
+                : UIColor(hex: 0x5F48BD).withAlphaComponent(0.07)
+        }
+        tint.translatesAutoresizingMaskIntoConstraints = false
+        tint.isUserInteractionEnabled = false
+        glass.contentView.addSubview(tint)
+        NSLayoutConstraint.activate([
+            tint.topAnchor.constraint(equalTo: glass.contentView.topAnchor),
+            tint.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor),
+            tint.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor),
+            tint.bottomAnchor.constraint(equalTo: glass.contentView.bottomAnchor)
+        ])
         return glass
     }
 

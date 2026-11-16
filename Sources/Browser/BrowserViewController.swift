@@ -168,23 +168,27 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         downloadFAB.translatesAutoresizingMaskIntoConstraints = false
         downloadFAB.isHidden = true
 
-        // Liquid glass skin: frosted blur under the address row.
+        // Liquid glass skin: frosted blur under the address row. No clipping on
+        // the host — it would kill the drop shadow that separates it from pages.
         omnibox.backgroundColor = .clear
         omnibox.layer.cornerRadius = 26
         omnibox.layer.cornerCurve = .continuous
-        omnibox.clipsToBounds = true
         let omniboxGlass = Theme.liquidGlassView(corner: 26)
         omnibox.addSubview(omniboxGlass)
+        Theme.floatingShadow(omnibox)
         omnibox.translatesAutoresizingMaskIntoConstraints = false
 
         let toolbarChrome = UIView()
-        // Liquid glass skin for the floating dock.
+        // Liquid glass dock, flush with the screen edges and the tab bar below
+        // (rounded top corners only) so the two rows read as one modern bottom bar.
         toolbarChrome.backgroundColor = .clear
-        toolbarChrome.layer.cornerRadius = 26
+        toolbarChrome.layer.cornerRadius = 22
         toolbarChrome.layer.cornerCurve = .continuous
-        toolbarChrome.clipsToBounds = true
-        let toolbarGlass = Theme.liquidGlassView(corner: 26)
+        toolbarChrome.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        let toolbarGlass = Theme.liquidGlassView(corner: 22)
+        toolbarGlass.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
         toolbarChrome.addSubview(toolbarGlass)
+        Theme.floatingShadow(toolbarChrome)
         toolbarChrome.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(omnibox)
@@ -262,15 +266,22 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             addressRow.heightAnchor.constraint(equalToConstant: 36),
 
             downloadFAB.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            downloadFAB.heightAnchor.constraint(equalToConstant: 48),
+
+            // Layout guards: the omnibox can never stretch beyond its capsule,
+            // no matter which position set is active (fixes bottom-mode stretch).
+            omnibox.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor),
+            omnibox.bottomAnchor.constraint(lessThanOrEqualTo: toolbarChrome.topAnchor, constant: -8),
 
             progressBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             progressBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             progressBar.heightAnchor.constraint(equalToConstant: 2),
 
-            toolbarChrome.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            toolbarChrome.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
-            toolbarChrome.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            toolbarChrome.heightAnchor.constraint(equalToConstant: 52),
+            // Dock is flush: full width, sitting directly on the tab bar.
+            toolbarChrome.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            toolbarChrome.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            toolbarChrome.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            toolbarChrome.heightAnchor.constraint(equalToConstant: 54),
 
             toolbar.leadingAnchor.constraint(equalTo: toolbarChrome.leadingAnchor, constant: 4),
             toolbar.trailingAnchor.constraint(equalTo: toolbarChrome.trailingAnchor, constant: -4),

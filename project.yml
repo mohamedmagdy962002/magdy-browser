@@ -10,8 +10,8 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     CODE_SIGN_STYLE: Automatic
-    CURRENT_PROJECT_VERSION: "36"
-    MARKETING_VERSION: "2.26"
+    CURRENT_PROJECT_VERSION: "37"
+    MARKETING_VERSION: "2.27"
     TARGETED_DEVICE_FAMILY: "1,2"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     SWIFT_STRICT_CONCURRENCY: minimal
@@ -48,8 +48,8 @@ targets:
       properties:
         CFBundleDisplayName: Magdy
         CFBundleName: Magdy Browser
-        CFBundleShortVersionString: "2.26"
-        CFBundleVersion: "36"
+        CFBundleShortVersionString: "2.27"
+        CFBundleVersion: "37"
         UILaunchScreen: {}
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
