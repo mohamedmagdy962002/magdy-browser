@@ -38,11 +38,16 @@ final class ScreenshotTests: XCTestCase {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
         sleep(1)
 
-        // Omnibox capsule (top) → suggestions.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.075)).tap()
-        sleep(1)
-        app.typeText("magdy.com")
-        sleep(1)
+        // Omnibox: focus the address field by element query, not blind taps.
+        let field = app.textFields.firstMatch
+        if field.waitForExistence(timeout: 5) {
+            field.tap()
+            sleep(1)
+            if app.keyboards.firstMatch.exists {
+                app.typeText("magdy.com")
+                sleep(1)
+            }
+        }
         snap(app, "04-suggestions")
     }
 
