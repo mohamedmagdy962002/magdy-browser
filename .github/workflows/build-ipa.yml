@@ -68,10 +68,13 @@ jobs:
 
       - name: Run UI screenshot tests
         run: |
+          # Pick whatever iPhone simulator this runner image ships.
+          UDID=$(xcrun simctl list devices available | grep -m1 "iPhone" | awk -F'[()]' '{print $2}')
+          echo "Simulator UDID: $UDID"
           xcodebuild test \
             -project MagdyBrowser.xcodeproj \
             -scheme Screenshots \
-            -destination 'platform=iOS Simulator,name=iPhone 16,OS=latest' \
+            -destination "platform=iOS Simulator,id=$UDID" \
             -derivedDataPath build/TestData \
             CODE_SIGNING_ALLOWED=NO
         env:

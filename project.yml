@@ -159,6 +159,10 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
+  MagdyBrowser:
+    build:
+      targets:
+        MagdyBrowser: all
   Screenshots:
     build:
       targets:
