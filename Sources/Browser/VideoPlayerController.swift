@@ -43,9 +43,10 @@ final class VideoPlayerController: UIViewController {
     private var hideTimer: Timer?
     private var errorShown = false
     private let reusedPlayer: AVPlayer?
-    /// True when ✕ adopted the player into PlayerSession (audio keeps playing) —
-    /// viewDidDisappear must not pause it then.
-    private var adopted = false
+    // Stored so the gesture delegate can tell them apart.
+    private var tapGesture: UITapGestureRecognizer!
+    private var doubleTapGesture: UITapGestureRecognizer!
+    private var swipeDownGesture: UIPanGestureRecognizer!
 
     init(url: URL, title: String, cookies: [HTTPCookie] = [], isLocal: Bool = false, existingPlayer: AVPlayer? = nil) {
         self.url = url
@@ -75,13 +76,14 @@ final class VideoPlayerController: UIViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        // Intentionally empty: presenting a sheet (download options, share) over
+        // the player also lands here — pausing or tearing down the time observer
+        // would freeze the scrubber and kill the audio. Cleanup lives in deinit.
+    }
+
+    deinit {
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
-            self.timeObserver = nil
-        }
-        // Adopted players keep playing under the "Video is playing" banner.
-        if !adopted {
-            player.pause()
         }
     }
 
@@ -97,22 +99,29 @@ final class VideoPlayerController: UIViewController {
         playerLayer.videoGravity = .resizeAspect
         container.layer.addSublayer(playerLayer)
 
-        // Tapping anywhere (except buttons) toggles the controls.
+        // Tapping anywhere (except controls) toggles them; buttons keep their
+        // own touches — the delegate below filters control areas out.
         let tap = UITapGestureRecognizer(target: self, action: #selector(toggleChrome))
         tap.cancelsTouchesInView = false
+        tap.delegate = self
         view.addGestureRecognizer(tap)
+        tapGesture = tap
         // Double-tap left/right half of the video skips ±10s (YouTube-style).
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(doubleTapSkip(_:)))
         doubleTap.numberOfTapsRequired = 2
         doubleTap.cancelsTouchesInView = false
+        doubleTap.delegate = self
         view.addGestureRecognizer(doubleTap)
+        doubleTapGesture = doubleTap
         tap.require(toFail: doubleTap)
 
-        // Swipe down anywhere to close — a second way out besides the ✕.
-        // cancelsTouchesInView = false so drifting fingers never cancel button taps.
+        // Swipe down on the video surface to close — never from the control
+        // bars (dragging the scrubber must not drag the player down).
         let swipeDown = UIPanGestureRecognizer(target: self, action: #selector(swipeDownClose(_:)))
         swipeDown.cancelsTouchesInView = false
+        swipeDown.delegate = self
         view.addGestureRecognizer(swipeDown)
+        swipeDownGesture = swipeDown
 
         view.addSubview(chrome)
         chrome.translatesAutoresizingMaskIntoConstraints = false
@@ -433,7 +442,6 @@ final class VideoPlayerController: UIViewController {
         if !isLocal && player.timeControlStatus == .playing {
             // Keep audio going; the browser shows the "Video is playing" banner.
             PlayerSession.shared.adopt(player, url: url, title: pageTitle, cookies: cookies)
-            adopted = true
         } else {
             player.pause()
         }
@@ -672,6 +680,26 @@ final class VideoPlayerController: UIViewController {
         let minutes = total / 60
         let remainder = total % 60
         return String(format: "%d:%02d", minutes, remainder)
+    }
+}
+
+extension VideoPlayerController: UIGestureRecognizerDelegate {
+    /// Taps on the control bars belong to the buttons alone; swipes only close
+    /// when they start on the video surface itself.
+    func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
+        let point = gesture.location(in: view)
+        let overControls = topBar.frame.contains(point)
+            || bottomCard.frame.contains(point)
+            || centerRow.frame.contains(point)
+        if gesture === swipeDownGesture {
+            return !overControls
+        }
+        // tap / double-tap: ignore while the controls are visible and the touch
+        // landed on a control, so buttons never double-fire with toggleChrome.
+        if gesture === tapGesture || gesture === doubleTapGesture {
+            return !(chrome.alpha > 0.5 && overControls)
+        }
+        return true
     }
 }
 

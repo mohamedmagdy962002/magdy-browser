@@ -477,6 +477,13 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private func presentVideoPlayer(url: URL, title: String) {
         let name = title.isEmpty ? url.host ?? "Video" : title
+        // Different video while one is playing in the background? Stop the old
+        // session first — otherwise two audio streams overlap.
+        if let sessionPlayer = PlayerSession.shared.player,
+           PlayerSession.shared.url?.absoluteString != url.absoluteString {
+            sessionPlayer.pause()
+            PlayerSession.shared.stop()
+        }
         // Reopen seamlessly when this is the session's own video (banner → expand).
         let reuse = PlayerSession.shared.url?.absoluteString == url.absoluteString
             ? PlayerSession.shared.player : nil
