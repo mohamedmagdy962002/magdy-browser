@@ -1,14 +1,23 @@
 import UIKit
 
+/// One row in the glass menu — built directly from the browser's action list
+/// (UIAction's handler isn't publicly invokable, so we carry our own closure).
+struct GlassMenuItem {
+    let title: String
+    let image: UIImage?
+    let destructive: Bool
+    let handler: () -> Void
+}
+
 /// Liquid-glass replacement for the native ⋯ pull-down menu: dimmed backdrop,
 /// frosted panel docked at the bottom, one row per action.
 final class GlassMenuSheet: UIViewController, UITableViewDataSource, UITableViewDelegate {
 
-    private let actions: [UIAction]
+    private let items: [GlassMenuItem]
     private let table = UITableView(frame: .zero, style: .plain)
 
-    init(actions: [UIAction]) {
-        self.actions = actions
+    init(items: [GlassMenuItem]) {
+        self.items = items
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .overFullScreen
         modalTransitionStyle = .crossDissolve
@@ -38,7 +47,7 @@ final class GlassMenuSheet: UIViewController, UITableViewDataSource, UITableView
         table.translatesAutoresizingMaskIntoConstraints = false
         panel.contentView.addSubview(table)
 
-        let height = min(CGFloat(actions.count) * 48 + 16, 460)
+        let height = min(CGFloat(items.count) * 48 + 16, 460)
 
         NSLayoutConstraint.activate([
             dim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -56,25 +65,24 @@ final class GlassMenuSheet: UIViewController, UITableViewDataSource, UITableView
             table.topAnchor.constraint(equalTo: panel.contentView.topAnchor, constant: 8),
             table.bottomAnchor.constraint(equalTo: panel.contentView.bottomAnchor)
         ])
-        table.isScrollEnabled = actions.count > 9
+        table.isScrollEnabled = items.count > 9
     }
 
     @objc private func close() { dismiss(animated: true) }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        actions.count
+        items.count
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "menuRow", for: indexPath)
-        let action = actions[indexPath.row]
-        let destructive = action.attributes.contains(.destructive)
+        let item = items[indexPath.row]
         var content = cell.defaultContentConfiguration()
-        content.image = action.image
-        content.imageProperties.tintColor = destructive ? .systemRed : Theme.primary
-        content.text = action.title
+        content.image = item.image
+        content.imageProperties.tintColor = item.destructive ? .systemRed : Theme.primary
+        content.text = item.title
         content.textProperties.font = Theme.body(15)
-        content.textProperties.color = destructive ? .systemRed : Theme.textPrimary
+        content.textProperties.color = item.destructive ? .systemRed : Theme.textPrimary
         content.imageToTextPadding = 14
         cell.contentConfiguration = content
         cell.backgroundColor = .clear
@@ -84,7 +92,7 @@ final class GlassMenuSheet: UIViewController, UITableViewDataSource, UITableView
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat { 48 }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let action = actions[indexPath.row]
-        dismiss(animated: true) { action.handler(action) }
+        let item = items[indexPath.row]
+        dismiss(animated: true) { item.handler() }
     }
 }

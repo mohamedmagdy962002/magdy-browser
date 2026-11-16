@@ -218,7 +218,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         suggestionsTable.dataSource = self
         suggestionsTable.delegate = self
         suggestionsTable.isHidden = true
-        suggestionsGlass?.isHidden = true
+        suggestionsGlass.isHidden = true
         suggestionsTable.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(suggestionsTable)
         suggestionsGlass.translatesAutoresizingMaskIntoConstraints = false
@@ -342,111 +342,112 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     /// ⋯ tap → liquid-glass action panel. Items rebuilt every tap so dynamic
     /// titles (Night Mode, per-site ads) are always current.
     @objc private func menuTapped() {
-        let sheet = GlassMenuSheet(actions: makeMenu().children.compactMap { $0 as? UIAction })
-        present(sheet, animated: true)
+        present(GlassMenuSheet(items: makeMenuItems()), animated: true)
     }
 
-    private func makeMenu() -> UIMenu {
-        let privateTab = UIAction(title: L.t("private_tab"), image: UIImage(systemName: "eye.slash")) { [weak self] _ in
+    private func makeMenuItems() -> [GlassMenuItem] {
+        let privateTab = GlassMenuItem(title: L.t("private_tab"), image: UIImage(systemName: "eye.slash"), destructive: false) { [weak self] in
             self?.openNewTab(privateMode: true)
         }
-        let favorite = UIAction(title: L.t("add_to_favorites"), image: UIImage(systemName: "star")) { [weak self] _ in
+        let favorite = GlassMenuItem(title: L.t("add_to_favorites"), image: UIImage(systemName: "star"), destructive: false) { [weak self] in
             self?.addCurrentPageToFavorites()
         }
-        let media = UIAction(title: L.t("download_media"), image: UIImage(systemName: "arrow.down.circle")) { [weak self] _ in
+        let media = GlassMenuItem(title: L.t("download_media"), image: UIImage(systemName: "arrow.down.circle"), destructive: false) { [weak self] in
             self?.downloadMediaFromPage()
         }
-        let downloader = UIAction(title: "Video Downloader", image: UIImage(systemName: "square.and.arrow.down")) { [weak self] _ in
+        let downloader = GlassMenuItem(title: "Video Downloader", image: UIImage(systemName: "square.and.arrow.down"), destructive: false) { [weak self] in
             self?.openVideoDownloader()
         }
-        let reader = UIAction(title: L.t("reader_mode"), image: UIImage(systemName: "text.alignleft")) { [weak self] _ in
+        let reader = GlassMenuItem(title: L.t("reader_mode"), image: UIImage(systemName: "text.alignleft"), destructive: false) { [weak self] in
             self?.openReaderMode()
         }
-        let find = UIAction(title: L.t("find_in_page"), image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in
+        let find = GlassMenuItem(title: L.t("find_in_page"), image: UIImage(systemName: "magnifyingglass"), destructive: false) { [weak self] in
             self?.openFindInPage()
         }
-        let closeAll = UIAction(title: L.t("close_all_tabs"), image: UIImage(systemName: "xmark.circle"), attributes: .destructive) { [weak self] _ in
+        let closeAll = GlassMenuItem(title: L.t("close_all_tabs"), image: UIImage(systemName: "xmark.circle"), destructive: true) { [weak self] in
             self?.closeAllTabs()
         }
-        let desktopSite = UIAction(title: "Desktop Site", image: UIImage(systemName: "desktopcomputer")) { [weak self] _ in
+        let desktopSite = GlassMenuItem(title: "Desktop Site", image: UIImage(systemName: "desktopcomputer"), destructive: false) { [weak self] in
             self?.toggleDesktopSite()
         }
-        let inSafari = UIAction(title: "Open in Safari", image: UIImage(systemName: "safari")) { [weak self] _ in
+        let inSafari = GlassMenuItem(title: "Open in Safari", image: UIImage(systemName: "safari"), destructive: false) { [weak self] in
             self?.openInSafari()
         }
-        let copy = UIAction(title: "Copy Link", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in
+        let copy = GlassMenuItem(title: "Copy Link", image: UIImage(systemName: "doc.on.doc"), destructive: false) { [weak self] in
             self?.copyLink()
         }
-        let tabsGrid = UIAction(title: "All Tabs", image: UIImage(systemName: "square.grid.2x2")) { [weak self] _ in
+        let tabsGrid = GlassMenuItem(title: "All Tabs", image: UIImage(systemName: "square.grid.2x2"), destructive: false) { [weak self] in
             self?.openTabGrid()
         }
-        let reopen = UIAction(title: "Reopen Closed Tab", image: UIImage(systemName: "arrow.uturn.left")) { [weak self] _ in
+        let reopen = GlassMenuItem(title: "Reopen Closed Tab", image: UIImage(systemName: "arrow.uturn.left"), destructive: false) { [weak self] in
             self?.reopenClosedTab()
         }
-        let savePDF = UIAction(title: "Export Page as PDF", image: UIImage(systemName: "doc.richtext")) { [weak self] _ in
+        let savePDF = GlassMenuItem(title: "Export Page as PDF", image: UIImage(systemName: "doc.richtext"), destructive: false) { [weak self] in
             self?.exportPDF(fullPage: false)
         }
-        let screenshot = UIAction(title: "Full Page Screenshot", image: UIImage(systemName: "camera.viewfinder")) { [weak self] _ in
+        let screenshot = GlassMenuItem(title: "Full Page Screenshot", image: UIImage(systemName: "camera.viewfinder"), destructive: false) { [weak self] in
             self?.fullPageScreenshot()
         }
-        let biggerText = UIAction(title: "Bigger Text", image: UIImage(systemName: "textformat.size.larger")) { [weak self] _ in
+        let biggerText = GlassMenuItem(title: "Bigger Text", image: UIImage(systemName: "textformat.size.larger"), destructive: false) { [weak self] in
             self?.adjustSiteZoom(delta: 20)
         }
-        let smallerText = UIAction(title: "Smaller Text", image: UIImage(systemName: "textformat.size.smaller")) { [weak self] _ in
+        let smallerText = GlassMenuItem(title: "Smaller Text", image: UIImage(systemName: "textformat.size.smaller"), destructive: false) { [weak self] in
             self?.adjustSiteZoom(delta: -20)
         }
-        let resetText = UIAction(title: "Reset Text Size", image: UIImage(systemName: "textformat.size")) { [weak self] _ in
+        let resetText = GlassMenuItem(title: "Reset Text Size", image: UIImage(systemName: "textformat.size"), destructive: false) { [weak self] in
             self?.adjustSiteZoom(delta: nil)
         }
-        let clearSite = UIAction(
+        let clearSite = GlassMenuItem(
             title: "Clear Data for This Site",
             image: UIImage(systemName: "shield.slash"),
-            attributes: .destructive
-        ) { [weak self] _ in
+            destructive: true
+        ) { [weak self] in
             self?.clearSiteData()
         }
-        let allowAds = activeTab?.webView.url?.host.map { host -> UIAction in
+        let allowAds = activeTab?.webView.url?.host.map { host -> GlassMenuItem in
             let allowed = BrowserTab.isAdAllowed(host)
-            return UIAction(
+            return GlassMenuItem(
                 title: allowed ? "Re-enable Ads on This Site" : "Allow Ads on This Site",
-                image: UIImage(systemName: allowed ? "shield.fill" : "shield.lefthalf.filled.slash")
-            ) { [weak self] _ in
+                image: UIImage(systemName: allowed ? "shield.fill" : "shield.lefthalf.filled.slash"),
+                destructive: false
+            ) { [weak self] in
                 BrowserTab.setAdAllowed(host, !allowed)
                 self?.activeTab?.applyNewRuleLists()
                 self?.activeTab?.reload()
             }
         }
-        let nightMode = UIAction(
+        let nightMode = GlassMenuItem(
             title: activeTab?.nightModeEnabled == true ? "Night Mode Off" : "Night Mode On",
-            image: UIImage(systemName: "moon")
-        ) { [weak self] _ in
+            image: UIImage(systemName: "moon"),
+            destructive: false
+        ) { [weak self] in
             self?.toggleNightMode()
         }
-        let qr = UIAction(title: "Scan QR Code", image: UIImage(systemName: "qrcode.viewfinder")) { [weak self] _ in
+        let qr = GlassMenuItem(title: "Scan QR Code", image: UIImage(systemName: "qrcode.viewfinder"), destructive: false) { [weak self] in
             self?.openQRScanner()
         }
-        let shareQR = UIAction(title: "QR Code of This Page", image: UIImage(systemName: "qrcode")) { [weak self] _ in
+        let shareQR = GlassMenuItem(title: "QR Code of This Page", image: UIImage(systemName: "qrcode"), destructive: false) { [weak self] in
             self?.sharePageQRCode()
         }
-        let voice = UIAction(title: "Voice Search", image: UIImage(systemName: "mic")) { [weak self] _ in
+        let voice = GlassMenuItem(title: "Voice Search", image: UIImage(systemName: "mic"), destructive: false) { [weak self] in
             self?.openVoiceSearch()
         }
-        let readingList = UIAction(title: "Add to Reading List", image: UIImage(systemName: "book")) { [weak self] _ in
+        let readingList = GlassMenuItem(title: "Add to Reading List", image: UIImage(systemName: "book"), destructive: false) { [weak self] in
             self?.saveToReadingList()
         }
-        let translate = UIAction(title: "Translate Page", image: UIImage(systemName: "character.bubble")) { [weak self] _ in
+        let translate = GlassMenuItem(title: "Translate Page", image: UIImage(systemName: "character.bubble"), destructive: false) { [weak self] in
             self?.translatePage()
         }
-        let lockNow = UIAction(title: "Lock Now", image: UIImage(systemName: "lock")) { [weak self] _ in
+        let lockNow = GlassMenuItem(title: "Lock Now", image: UIImage(systemName: "lock"), destructive: false) { [weak self] in
             self?.lockNow()
         }
-        let homepage = UIAction(title: "Homepage", image: UIImage(systemName: "house")) { [weak self] _ in
+        let homepage = GlassMenuItem(title: "Homepage", image: UIImage(systemName: "house"), destructive: false) { [weak self] in
             guard let self,
                   let raw = UserDefaults.standard.string(forKey: BrowserViewController.homepageURLKey),
                   let url = URL(string: raw) else { return }
             self.open(url: url, privateMode: false)
         }
-        var children: [UIMenuElement] = [
+        var items: [GlassMenuItem] = [
             tabsGrid, reopen, privateTab, favorite, homepage, readingList, media, downloader,
             reader, find, desktopSite, inSafari, copy, savePDF, screenshot,
             biggerText, smallerText, resetText, nightMode, translate,
@@ -454,8 +455,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         ]
         // RSS/Atom feeds advertised by the current page.
         if let feeds = activeTab?.rssFeeds, !feeds.isEmpty {
-            children.insert(
-                UIAction(title: "RSS Feeds", image: UIImage(systemName: "dot.radiowaves.right")) { [weak self] _ in
+            items.insert(
+                GlassMenuItem(title: "RSS Feeds", image: UIImage(systemName: "dot.radiowaves.right"), destructive: false) { [weak self] in
                     self?.showRSSFeeds(feeds)
                 },
                 at: 0
@@ -463,9 +464,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         }
         // Per-site ad allowlist — only shown on a loaded page.
         if let allowAds {
-            children.insert(allowAds, at: 0)
+            items.insert(allowAds, at: 0)
         }
-        return UIMenu(children: children)
+        return items
     }
 
     /// Lists the feeds found on the page; tapping one opens it.
