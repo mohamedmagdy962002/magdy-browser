@@ -8,9 +8,7 @@ final class ScreenshotTests: XCTestCase {
         let dir = ProcessInfo.processInfo.environment["SHOT_DIR"] ?? NSTemporaryDirectory()
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let shot = XCUIScreen.main.screenshot()
-        if let data = shot.pngRepresentation {
-            try? data.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
-        }
+        try? shot.pngRepresentation.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
     }
 
     func testCaptureScreens() {
@@ -37,11 +35,11 @@ final class ScreenshotTests: XCTestCase {
         snap(app, "03-menu")
 
         // Dismiss by tapping the dimmed backdrop near the top.
-        app.coordinate(withNormalizedOffset(CGVector(dx: 0.5, dy: 0.12))).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
         sleep(1)
 
         // Omnibox capsule (top) → suggestions.
-        app.coordinate(withNormalizedOffset(CGVector(dx: 0.5, dy: 0.075))).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.075)).tap()
         sleep(1)
         app.typeText("magdy.com")
         sleep(1)
@@ -50,6 +48,6 @@ final class ScreenshotTests: XCTestCase {
 
     private func dock(_ app: XCUIApplication, _ slot: Int) {
         let x = (Double(slot) + 0.5) / 5.0
-        app.coordinate(withNormalizedOffset(CGVector(dx: x, dy: 0.925))).tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: x, dy: 0.925)).tap()
     }
 }
