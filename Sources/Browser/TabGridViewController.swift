@@ -128,7 +128,7 @@ final class TabGridViewController: UICollectionViewController {
         dismiss(animated: true)
     }
 
-    func collectionView(
+    override func collectionView(
         _ collectionView: UICollectionView,
         viewForSupplementaryElementOfKind kind: String,
         at indexPath: IndexPath
