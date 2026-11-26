@@ -10,13 +10,15 @@ final class SettingsViewController: UITableViewController {
         case memorySaver, backup, forceZoom, homepage, quickSearch, omniboxPosition, searchSuggestions
     }
 
-    private let sections: [(title: String, rows: [Row])] = [
-        (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
-        ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault, .memorySaver, .forceZoom, .backup]),
-        ("Appearance", [.theme, .nightMode, .wallpaper, .textZoom]),
-        (L.t("language"), [.language, .searchEngine, .quickSearch, .omniboxPosition, .homepage, .searchSuggestions, .readingList]),
-        (L.t("about"), [.about])
-    ]
+    private var sections: [(title: String, rows: [Row])] {
+        return [
+            (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
+            ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault, .memorySaver, .forceZoom, .backup]),
+            ("Appearance", [.theme, .nightMode, .wallpaper, .textZoom]),
+            (L.t("language"), [.language, .searchEngine, .quickSearch, .omniboxPosition, .homepage, .searchSuggestions, .readingList]),
+            (L.t("about"), [.about])
+        ]
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -279,6 +281,8 @@ final class SettingsViewController: UITableViewController {
         for (code, name) in options {
             sheet.addAction(UIAlertAction(title: name, style: .default) { _ in
                 UserDefaults.standard.set(code, forKey: UserDefaultsKey.language)
+                self.title = L.t("settings")
+                NotificationCenter.default.post(name: .magdyLanguageChanged, object: nil)
                 self.tableView.reloadData()
             })
         }

@@ -25,6 +25,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private var bannerObserver: NSObjectProtocol?
     private var downloadsObserver: NSObjectProtocol?
     private var omniboxObserver: NSObjectProtocol?
+    private var languageObserver: NSObjectProtocol?
     /// Position anchor sets swapped by the "Search Bar Position" setting.
     private var topConstraints: [NSLayoutConstraint] = []
     private var bottomConstraints: [NSLayoutConstraint] = []
@@ -96,6 +97,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         }
         if let omniboxObserver {
             NotificationCenter.default.removeObserver(omniboxObserver)
+        }
+        if let languageObserver {
+            NotificationCenter.default.removeObserver(languageObserver)
         }
     }
 
@@ -374,6 +378,13 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             forName: .magdyOmniboxChanged, object: nil, queue: .main
         ) { [weak self] _ in
             self?.applyOmniboxLayout()
+        }
+        languageObserver = NotificationCenter.default.addObserver(
+            forName: .magdyLanguageChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.addressField.placeholder = L.t("search_placeholder")
+            self.addressField.accessibilityLabel = L.t("search_placeholder")
         }
     }
 
