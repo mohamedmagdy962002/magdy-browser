@@ -37,22 +37,22 @@ final class RootViewController: UITabBarController {
 
         let browser = UINavigationController(rootViewController: BrowserViewController())
         browser.tabBarItem = UITabBarItem(
-            title: "Browser", image: UIImage(systemName: "globe"), tag: 0
+            title: L.t("browser"), image: UIImage(systemName: "globe"), tag: 0
         )
 
         let downloads = UINavigationController(rootViewController: DownloadsViewController())
         downloads.tabBarItem = UITabBarItem(
-            title: "Downloads", image: UIImage(systemName: "arrow.down.circle"), tag: 1
+            title: L.t("downloads"), image: UIImage(systemName: "arrow.down.circle"), tag: 1
         )
 
         let media = UINavigationController(rootViewController: MediaToolsViewController())
         media.tabBarItem = UITabBarItem(
-            title: "Media", image: UIImage(systemName: "wand.and.stars"), tag: 2
+            title: L.t("media"), image: UIImage(systemName: "wand.and.stars"), tag: 2
         )
 
         let favorites = UINavigationController(rootViewController: FavoritesViewController())
         favorites.tabBarItem = UITabBarItem(
-            title: "Favorites", image: UIImage(systemName: "star"), tag: 3
+            title: L.t("favorites"), image: UIImage(systemName: "star"), tag: 3
         )
 
         let history = UINavigationController(rootViewController: HistoryViewController())

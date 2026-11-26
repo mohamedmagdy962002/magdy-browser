@@ -123,16 +123,16 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         let host = url.host?.lowercased()
         guard url.scheme?.lowercased() == "magdy", host == "open" || host == "download" else { return false }
-        if let source = options[.sourceApplication] as? String,
-           source != "com.magdy.browser.share", source != "com.magdy.browser.action" {
-            return false
-        }
 
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let target = components?.queryItems?.first(where: { $0.name == "url" })?.value
         let search = components?.queryItems?.first(where: { $0.name == "q" })?.value
         if host == "open", target == nil, search == nil {
             return true
+        }
+        if let source = options[.sourceApplication] as? String,
+           source != "com.magdy.browser.share", source != "com.magdy.browser.action" {
+            return false
         }
         let webDestination = target.flatMap(URL.webURL(from:))
         let searchDestination = search.flatMap { SearchEngine.effectiveSearchURL(for: $0) }

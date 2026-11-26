@@ -145,7 +145,12 @@ final class SettingsViewController: UITableViewController {
             cell.textLabel?.text = "Backup & Restore"
             cell.accessoryType = .disclosureIndicator
         case .about:
-            cell.textLabel?.text = L.t("about")
+            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+            if let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
+                cell.textLabel?.text = "Magdy Browser \(version) (\(build))"
+            } else {
+                cell.textLabel?.text = "Magdy Browser \(version)"
+            }
             cell.textLabel?.textColor = .secondaryLabel
         }
         return cell
