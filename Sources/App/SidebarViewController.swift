@@ -17,6 +17,11 @@ final class SidebarViewController: UITableViewController {
         tableView.reloadData()
     }
 
+    func refreshLocalizedContent() {
+        guard isViewLoaded else { return }
+        tableView.reloadData()
+    }
+
     func setSelectedRoute(_ route: AppRoute) {
         guard selectedRoute != route else { return }
         selectedRoute = route

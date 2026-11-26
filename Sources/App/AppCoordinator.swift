@@ -181,7 +181,7 @@ final class AppCoordinator {
         settings.title = L.t("settings")
         library.refreshLocalizedContent()
         more.refreshLocalizedContent()
-        sidebar.reloadData()
+        sidebar.refreshLocalizedContent()
     }
 
     private func navigation(for route: AppRoute) -> UINavigationController {
