@@ -166,7 +166,7 @@ final class VideoDownloaderViewController: UITableViewController {
                 return
             }
             statusLabel.text = "Starting download…"
-            scanner.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            scanner.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
                 DispatchQueue.main.async {
                     // A newer scan must not cancel a direct download awaiting its cookies.
                     switch kind {

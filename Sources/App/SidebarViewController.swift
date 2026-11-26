@@ -14,7 +14,7 @@ final class SidebarViewController: UITableViewController {
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = Theme.minimumTarget
         navigationController?.navigationBar.prefersLargeTitles = true
-        reloadData()
+        tableView.reloadData()
     }
 
     func setSelectedRoute(_ route: AppRoute) {
