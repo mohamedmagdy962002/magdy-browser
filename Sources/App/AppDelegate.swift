@@ -17,6 +17,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         resetUITestStateIfNeeded()
+        seedUITestLibraryIfNeeded()
 
         Theme.applyGlobalAppearance()
         ContentBlocker.shared.load()
@@ -156,6 +157,42 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             self.dispatchPendingIntents()
         }
         return true
+    }
+
+    private func seedUITestLibraryIfNeeded() {
+        guard ProcessInfo.processInfo.environment["MAGDY_LIBRARY_UI_SEED"] == "1" else { return }
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let downloads = documents.appendingPathComponent("Downloads", isDirectory: true)
+        try? FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true)
+        let seedFiles = [
+            "Coastal Walk.mp4",
+            "Night Drive.m4a",
+            "Reference Frame.png",
+            "Interview Transcript.pdf"
+        ]
+        let now = Date()
+        for (index, name) in seedFiles.enumerated() {
+            let url = downloads.appendingPathComponent(name)
+            try? Data(repeating: UInt8(index + 1), count: 48 + index * 32).write(to: url, options: .atomic)
+            try? FileManager.default.setAttributes(
+                [.modificationDate: now.addingTimeInterval(-Double(index * 3_600))],
+                ofItemAtPath: url.path
+            )
+        }
+        FavoritesStore.shared.add(
+            urlString: "https://example.com/films/after-light",
+            title: "After Light",
+            folder: "Watch later"
+        )
+        HistoryStore.shared.record(
+            url: URL(string: "https://example.com/journal/coastal-notes")!,
+            title: "Coastal field notes"
+        )
+        ReadingListStore.shared.add(
+            title: "A quieter way to collect media",
+            url: "https://example.com/journal/quiet-collection",
+            paragraphs: ["Keep the things worth returning to in one place.", "A library should make the next action obvious."]
+        )
     }
 
     private func resetUITestStateIfNeeded() {

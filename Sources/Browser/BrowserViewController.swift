@@ -45,8 +45,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        edgesForExtendedLayout = []
         view.accessibilityIdentifier = "browser-screen"
-        navigationController?.setNavigationBarHidden(true, animated: false)
+        navigationController?.setNavigationBarHidden(traitCollection.horizontalSizeClass != .regular, animated: false)
         view.backgroundColor = .systemBackground
         buildUI()
         openNewTab(privateMode: UserDefaultsKey.bool(UserDefaultsKey.defaultPrivate, default: false))

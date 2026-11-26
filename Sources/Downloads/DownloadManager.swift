@@ -130,12 +130,21 @@ final class DownloadManager: NSObject {
         return customFolderName ?? "Magdy Downloads"
     }
 
-    func withReadOnlyLibraryFolder<T>(_ body: (URL?) throws -> T) rethrows -> T {
-        if let custom = resolveCustomFolder() {
-            defer { custom.stopAccessingSecurityScopedResource() }
-            return try body(custom)
+    func retainReadOnlyLibraryFolder() -> FolderAccess? {
+        guard let folder = resolveCustomFolder() else { return nil }
+        return FolderAccess(url: folder)
+    }
+
+    final class FolderAccess {
+        let url: URL
+
+        init(url: URL) {
+            self.url = url
         }
-        return try body(nil)
+
+        deinit {
+            url.stopAccessingSecurityScopedResource()
+        }
     }
 
     private var customFolderName: String? {

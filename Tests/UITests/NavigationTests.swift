@@ -8,6 +8,7 @@ final class NavigationTests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app.launchEnvironment["MAGDY_UI_TEST"] = "1"
+        app.launchEnvironment["MAGDY_LIBRARY_UI_SEED"] = "1"
         app.launch()
     }
 
@@ -23,10 +24,10 @@ final class NavigationTests: XCTestCase {
         waitForHittable(app.textFields["address-field"])
         guard app.tabBars.firstMatch.exists else {
             if UIDevice.current.userInterfaceIdiom == .pad {
-                XCTFail("Compact navigation is missing on iPad.")
-                return
+                throw XCTSkip("Compact navigation is not visible in regular width.")
             }
-            throw XCTSkip("Compact navigation is not visible in regular width.")
+            XCTFail("Compact navigation is missing on iPhone.")
+            return
         }
         let tabButton = app.buttons["browser-tabs"]
         XCTAssertEqual(tabButton.value as? String, "1")
@@ -35,12 +36,31 @@ final class NavigationTests: XCTestCase {
         XCTAssertEqual(tabButton.value as? String, "2")
 
         app.tabBars.buttons["Library"].tap()
-        waitForHittable(app.tables["library-screen"].cells["library-downloads"])
-        app.tables["library-screen"].cells["library-downloads"].tap()
+        let library = app.collectionViews["library-collection"]
+        waitForHittable(library)
+        waitForHittable(app.searchFields["library-search"])
+        XCTAssertTrue(app.buttons["library-filter-all"].isSelected)
+        XCTAssertTrue(app.staticTexts["library-count"].exists)
+        captureEvidence("phone-library")
+
+        let search = app.searchFields["library-search"]
+        search.tap()
+        search.typeText("unlikely search result")
+        waitForHittable(app.otherElements["library-no-results"])
+        app.buttons["Show All"].tap()
+        waitForHittable(library)
+        XCTAssertFalse(app.otherElements["library-no-results"].exists)
+
+        app.buttons["library-manage"].tap()
+        let downloadsAction = app.buttons.matching(
+            NSPredicate(format: "label == %@ AND isHittable == true", "Downloads")
+        ).firstMatch
+        waitForHittable(downloadsAction)
+        downloadsAction.tap()
         waitForHittable(app.navigationBars["Downloads"].buttons["Library"])
 
         app.navigationBars["Downloads"].buttons["Library"].tap()
-        waitForHittable(app.tables["library-screen"].cells["library-favorites"])
+        waitForHittable(library)
         app.tabBars.buttons["Tools"].tap()
         waitForHittable(app.navigationBars["Tools"].buttons["Refresh"])
 
@@ -73,11 +93,11 @@ final class NavigationTests: XCTestCase {
         let library = app.tables["app-sidebar"].cells["sidebar-library"]
         waitForHittable(library)
         library.tap()
-        waitForHittable(app.tables["library-screen"].cells["library-downloads"])
+        let libraryCollection = app.collectionViews["library-collection"]
+        waitForHittable(libraryCollection)
+        waitForHittable(app.searchFields["library-search"])
         captureEvidence("ipad-library-sidebar")
-
-        app.tables["library-screen"].cells["library-downloads"].tap()
-        waitForHittable(app.navigationBars["Downloads"])
+        XCTAssertTrue(app.buttons["library-filter-all"].isSelected)
         app.tables["app-sidebar"].cells["sidebar-browser"].tap()
         waitForHittable(app.textFields["address-field"])
         XCTAssertEqual(browserTabs.value as? String, "2")

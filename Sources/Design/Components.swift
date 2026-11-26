@@ -105,7 +105,10 @@ final class FilterChip: UIButton {
     }
 
     override var isSelected: Bool {
-        didSet { updateAppearance() }
+        didSet {
+            updateAppearance()
+            accessibilityTraits = isSelected ? [.button, .selected] : .button
+        }
     }
 
     private func updateAppearance() {

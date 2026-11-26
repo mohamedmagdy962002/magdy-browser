@@ -126,7 +126,7 @@ struct LibraryFileRecord {
 }
 
 struct LibrarySnapshot {
-    enum SortOrder {
+    enum SortOrder: CaseIterable {
         case recent, name, size
     }
 

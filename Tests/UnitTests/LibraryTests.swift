@@ -105,7 +105,7 @@ final class LibraryTests: XCTestCase {
         XCTAssertTrue(item.isAvailable)
     }
 
-    func testSnapshotFiltersDuplicatesInvalidURLsAndEmptyReadingItems() throws {
+    func testSnapshotDeduplicatesEntriesRejectsInvalidURLsAndMarksEmptyReadingUnavailable() throws {
         let id = UUID()
         let data = Data("""
         {"id":"\(id.uuidString)","title":"Saved article","url":"","paragraphs":["First"],"addedAt":0}
