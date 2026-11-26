@@ -1,9 +1,7 @@
 import CoreText
 import UIKit
 
-/// Bundled variable typefaces loaded through CoreText, with a system-font fallback.
-/// Inter (body) and Space Grotesk (headlines) match the Stitch design system;
-/// the Noto families cover Arabic, Japanese, Korean and Simplified Chinese.
+/// Space Grotesk for brand headlines, system fonts for UI body text, and bundled Noto families for supported non-Latin scripts.
 enum AppFonts {
 
     static let familyNames = [
@@ -54,26 +52,31 @@ enum AppFonts {
         return UIFont(descriptor: varied, size: size)
     }
 
-    /// Headline face: Space Grotesk, falling back to the system rounded face.
+    /// Rounded system face for large brand and media titles.
     static func headline(_ size: CGFloat, weight: UIFont.Weight = .bold) -> UIFont {
-        let custom = font("SpaceGrotesk", size: size, weight: weight)
-        if custom.fontName.lowercased().contains("spacegrotesk") { return custom }
         let fallback = UIFont.systemFont(ofSize: size, weight: weight)
         guard let descriptor = fallback.fontDescriptor.withDesign(.rounded) else { return fallback }
         return UIFont(descriptor: descriptor, size: size)
     }
 
-    /// Body face: Inter, or a Noto family for non-Latin scripts.
+    /// Optional bundled brand face for the canonical wordmark.
+    static func brandHeadline(_ size: CGFloat, weight: UIFont.Weight = .bold) -> UIFont {
+        let custom = font("SpaceGrotesk", size: size, weight: weight)
+        if custom.fontName.lowercased().contains("spacegrotesk") { return custom }
+        return headline(size, weight: weight)
+    }
+
+    /// System body face, with bundled Noto families for supported non-Latin scripts.
     static func body(_ size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
-        let family: String
+        let family: String?
         switch L.languageTag {
-        case "ar", "fa", "he": family = "NotoSansArabic"
+        case "ar", "fa": family = "NotoSansArabic"
         case "ja": family = "NotoSansJP"
         case "ko": family = "NotoSansKR"
         case "zh", "zh-hans": family = "NotoSansSC"
-        case "zh-hant": family = "NotoSansTC"
-        default: family = "Inter"
+        default: family = nil
         }
+        guard let family else { return UIFont.systemFont(ofSize: size, weight: weight) }
         let custom = font(family, size: size, weight: weight)
         if custom.fontName.lowercased().contains(family.lowercased()) { return custom }
         return UIFont.systemFont(ofSize: size, weight: weight)

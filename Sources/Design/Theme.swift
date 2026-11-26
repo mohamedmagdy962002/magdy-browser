@@ -1,93 +1,162 @@
 import UIKit
 
-/// Design tokens generated from the Stitch "Magdy Master" light design system.
-///
-/// Light ("MASTER" reference): surface #FBF8FF · card #FFFFFF · container #F5F2FB
-/// primary #5F48BD (deep periwinkle) · alt #7862D7 · text #1B1B21 / #484553.
-/// Dark: canvas #0D0E12 · card #181920 · border #262734 (kept from Magdy Modern).
 enum Theme {
 
-    // MARK: - Colors
-
-    /// Light/dark adaptive colors — dark values resolve automatically when the
-    /// interface style changes (or when the app is forced via the Theme setting).
-    private static func adaptive(light: UInt32, dark: UInt32) -> UIColor {
+    private static func adaptive(
+        light: UInt32,
+        dark: UInt32,
+        highContrastLight: UInt32? = nil,
+        highContrastDark: UInt32? = nil
+    ) -> UIColor {
         UIColor { trait in
-            trait.userInterfaceStyle == .dark ? UIColor(hex: dark) : UIColor(hex: light)
+            if trait.accessibilityContrast == .high {
+                if trait.userInterfaceStyle == .dark, let value = highContrastDark {
+                    return UIColor(hex: value)
+                }
+                if trait.userInterfaceStyle != .dark, let value = highContrastLight {
+                    return UIColor(hex: value)
+                }
+            }
+            return UIColor(hex: trait.userInterfaceStyle == .dark ? dark : light)
         }
     }
 
-    static let canvas = adaptive(light: 0xFBF8FF, dark: 0x0D0E12)
-    static let card = adaptive(light: 0xFFFFFF, dark: 0x181920)
-    /// Elevated container (tables, section backgrounds).
-    static let container = adaptive(light: 0xF5F2FB, dark: 0x13141B)
-    static let primary = adaptive(light: 0x5F48BD, dark: 0x8B5CF6)
-    static let primaryAlt = adaptive(light: 0x7862D7, dark: 0xA78BFA)
-    /// Soft lavender tint background for icon squircles / accents.
-    static let primaryContainer = adaptive(light: 0xE6DEFF, dark: 0x24183E)
-    static let violet = adaptive(light: 0x7862D7, dark: 0xA78BFA)
-    static let textPrimary = adaptive(light: 0x1B1B21, dark: 0xF3F4F6)
-    static let textSecondary = adaptive(light: 0x484553, dark: 0x9CA3AF)
-    // Alpha must be applied inside the provider — withAlphaComponent on a dynamic
-    // color resolves it once and freezes the light/dark value.
-    static let hairline = UIColor { t in
-        (t.userInterfaceStyle == .dark ? UIColor(hex: 0x262734) : UIColor(hex: 0xC9C4D5)).withAlphaComponent(0.45)
+    static let canvas = adaptive(light: 0xF7F3EE, dark: 0x120C09)
+    static let surface = adaptive(light: 0xFFFDFB, dark: 0x1B1410)
+    static let card = surface
+    static let raised = adaptive(light: 0xEAE3DC, dark: 0x28201B)
+    static let container = adaptive(light: 0xF0EAE4, dark: 0x17100C)
+    static let bar = container
+    static let field = adaptive(light: 0xE7E0D9, dark: 0x261D19)
+
+    static let textPrimary = adaptive(
+        light: 0x211914,
+        dark: 0xF0EAE4,
+        highContrastLight: 0x18120F,
+        highContrastDark: 0xFFFDF8
+    )
+    static let textSecondary = adaptive(
+        light: 0x645C58,
+        dark: 0xB0A9A3,
+        highContrastLight: 0x403834,
+        highContrastDark: 0xD8D0CA
+    )
+    static let textTertiary = adaptive(
+        light: 0x6F6864,
+        dark: 0x7F7974,
+        highContrastLight: 0x5C5551,
+        highContrastDark: 0xA79F99
+    )
+
+    static let accent = adaptive(
+        light: 0xEA5400,
+        dark: 0xFA8927,
+        highContrastLight: 0xC53D00,
+        highContrastDark: 0xFFB067
+    )
+    static let accentText = adaptive(
+        light: 0xC53D00,
+        dark: 0xFFB067,
+        highContrastLight: 0xB93400,
+        highContrastDark: 0xFFC18A
+    )
+    static let primary = accentText
+    static let primaryAlt = adaptive(light: 0xB93400, dark: 0xEC6F00)
+    static let violet = accentText
+    static let accentPressed = primaryAlt
+    static let accentContainer = adaptive(light: 0xFED4B9, dark: 0x4A200C)
+    static let primaryContainer = accentContainer
+    static let onAccent = adaptive(
+        light: 0x190F0B,
+        dark: 0x190F0B,
+        highContrastLight: 0xFEFBF8,
+        highContrastDark: 0x190F0B
+    )
+
+    static let border = adaptive(
+        light: 0xD6D0CB,
+        dark: 0x38312D,
+        highContrastLight: 0x8F8580,
+        highContrastDark: 0x6A615C
+    )
+    static let hairline = UIColor { trait in
+        border.withAlphaComponent(trait.accessibilityContrast == .high ? 0.8 : 0.55)
     }
-    static let glass = UIColor { t in
-        (t.userInterfaceStyle == .dark ? UIColor(hex: 0x13141B) : UIColor(hex: 0xFFFFFF)).withAlphaComponent(0.94)
+    static let glass = bar
+
+    static let success = adaptive(light: 0x298646, dark: 0x55B978)
+    static let warning = adaptive(light: 0xC58D04, dark: 0xE3B74F)
+    static let danger = adaptive(light: 0xC53637, dark: 0xF07373, highContrastLight: 0xA32222)
+    static let info = adaptive(light: 0x1479B0, dark: 0x63B5DB)
+    static let mediaSurface = adaptive(light: 0x20120F, dark: 0x0C0403)
+    static let mediaText = adaptive(light: 0xF6F1EB, dark: 0xF6F1EB)
+    static let scrim = UIColor { trait in
+        UIColor(hex: trait.userInterfaceStyle == .dark ? 0x0C0403 : 0x211914)
+            .withAlphaComponent(trait.userInterfaceStyle == .dark ? 0.64 : 0.36)
     }
 
-    // MARK: - Liquid Glass (iOS 26 style)
-
-    /// Frosted liquid-glass surface: blur material + lavender tint + specular edge.
-    /// Content views are added ON TOP of the returned effect view.
     static func liquidGlassView(corner: CGFloat) -> UIVisualEffectView {
-        let glass = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
-        glass.layer.cornerRadius = corner
-        glass.layer.cornerCurve = .continuous
-        glass.layer.borderWidth = 1
-        // cgColor resolves once — a mid alpha reads as glass in both modes.
-        glass.layer.borderColor = UIColor(white: 1, alpha: 0.65).cgColor
-        glass.clipsToBounds = true
-        // Lavender tint so the capsule still reads over plain white pages.
-        let tint = UIView()
-        tint.backgroundColor = UIColor { t in
-            t.userInterfaceStyle == .dark
-                ? UIColor(white: 0, alpha: 0.10)
-                : UIColor(hex: 0x5F48BD).withAlphaComponent(0.07)
-        }
-        tint.translatesAutoresizingMaskIntoConstraints = false
-        tint.isUserInteractionEnabled = false
-        glass.contentView.addSubview(tint)
-        NSLayoutConstraint.activate([
-            tint.topAnchor.constraint(equalTo: glass.contentView.topAnchor),
-            tint.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor),
-            tint.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor),
-            tint.bottomAnchor.constraint(equalTo: glass.contentView.bottomAnchor)
-        ])
-        return glass
+        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        view.layer.cornerRadius = corner
+        view.layer.cornerCurve = .continuous
+        view.layer.borderWidth = 1
+        view.layer.borderColor = UIColor(hex: 0x8F8580).withAlphaComponent(0.35).cgColor
+        view.clipsToBounds = true
+        return view
     }
 
-    /// App theme: MASTER light by default, forced light or forced dark. Forced
-    /// styles are applied per window in RootViewController.
     static var forcedStyle: UIUserInterfaceStyle {
         switch UserDefaults.standard.string(forKey: "magdy.theme") {
-        case "system": return .unspecified
+        case "light": return .light
         case "dark": return .dark
-        default: return .light
+        default: return .unspecified
         }
     }
 
-    // MARK: - Metrics
+    enum Spacing {
+        static let x1: CGFloat = 4
+        static let x2: CGFloat = 8
+        static let x3: CGFloat = 12
+        static let x4: CGFloat = 16
+        static let x5: CGFloat = 20
+        static let x6: CGFloat = 24
+        static let x8: CGFloat = 32
+        static let x10: CGFloat = 40
+        static let x12: CGFloat = 48
+    }
 
-    static let corner: CGFloat = 16
-    static let cornerSmall: CGFloat = 12
-    static let omniboxHeight: CGFloat = 50
-    static let gutter: CGFloat = 16
+    enum Radius {
+        static let small: CGFloat = 8
+        static let control: CGFloat = 12
+        static let panel: CGFloat = 16
+        static let media: CGFloat = 20
+        static let feature: CGFloat = 24
+    }
 
-    // MARK: - Type
+    enum Motion {
+        static let quick: TimeInterval = 0.15
+        static let standard: TimeInterval = 0.22
+        static let expressive: TimeInterval = 0.28
+    }
 
-    /// Geometric headline face (Space Grotesk in Stitch -> bundled Space Grotesk / SF Rounded).
+    static let corner: CGFloat = Radius.panel
+    static let cornerSmall: CGFloat = Radius.control
+    static let omniboxHeight: CGFloat = 52
+    static let gutter: CGFloat = Spacing.x4
+    static let minimumTarget: CGFloat = 44
+
+    static let largeTitle = UIFontMetrics.default.scaledFont(for: AppFonts.headline(34, weight: .bold))
+    static let title = UIFontMetrics.default.scaledFont(for: AppFonts.headline(28, weight: .semibold))
+    static let headline = UIFontMetrics.default.scaledFont(for: AppFonts.headline(17, weight: .semibold))
+    static let bodyStyle = UIFontMetrics.default.scaledFont(for: AppFonts.body(17, weight: .regular))
+    static let callout = UIFontMetrics.default.scaledFont(for: AppFonts.body(16, weight: .regular))
+    static let subhead = UIFontMetrics.default.scaledFont(for: AppFonts.body(15, weight: .medium))
+    static let footnote = UIFontMetrics.default.scaledFont(for: AppFonts.body(13, weight: .regular))
+    static let caption = UIFontMetrics.default.scaledFont(for: AppFonts.body(12, weight: .medium))
+    static let mediaTime = UIFontMetrics.default.scaledFont(
+        for: UIFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+    )
+
     static func headline(_ size: CGFloat, weight: UIFont.Weight = .bold) -> UIFont {
         UIFontMetrics.default.scaledFont(for: AppFonts.headline(size, weight: weight))
     }
@@ -96,84 +165,116 @@ enum Theme {
         UIFontMetrics.default.scaledFont(for: AppFonts.body(size, weight: weight))
     }
 
-    // MARK: - Elevation
-
-    /// Level 1 — resting card.
     static func cardShadow(_ view: UIView) {
-        view.layer.shadowColor = UIColor(hex: 0x1C1C1E).cgColor
-        view.layer.shadowOpacity = 0.06
-        view.layer.shadowRadius = 24
-        view.layer.shadowOffset = CGSize(width: 0, height: 8)
+        view.layer.shadowColor = UIColor(hex: 0x20120F).cgColor
+        view.layer.shadowOpacity = 0.07
+        view.layer.shadowRadius = 18
+        view.layer.shadowOffset = CGSize(width: 0, height: 6)
     }
 
-    /// Level 2 — floating chrome.
     static func floatingShadow(_ view: UIView) {
-        view.layer.shadowColor = UIColor(hex: 0x1C1C1E).cgColor
-        view.layer.shadowOpacity = 0.08
-        view.layer.shadowRadius = 20
+        view.layer.shadowColor = UIColor(hex: 0x20120F).cgColor
+        view.layer.shadowOpacity = 0.12
+        view.layer.shadowRadius = 16
         view.layer.shadowOffset = CGSize(width: 0, height: 4)
     }
 
-    /// Level 3 — primary action.
     static func fabShadow(_ view: UIView) {
-        view.layer.shadowColor = primary.cgColor
-        view.layer.shadowOpacity = 0.35
-        view.layer.shadowRadius = 22
-        view.layer.shadowOffset = CGSize(width: 0, height: 8)
+        view.layer.shadowColor = UIColor(hex: 0xEA5400).cgColor
+        view.layer.shadowOpacity = 0.24
+        view.layer.shadowRadius = 16
+        view.layer.shadowOffset = CGSize(width: 0, height: 6)
     }
 
-    // MARK: - Gradients
-
-    static func applyGradient(to view: UIView, colors: [UIColor] = [primary, primaryAlt]) {
-        let gradient = CAGradientLayer()
-        gradient.colors = colors.map(\.cgColor)
-        gradient.startPoint = CGPoint(x: 0, y: 0)
-        gradient.endPoint = CGPoint(x: 1, y: 1)
-        gradient.frame = view.bounds
-        gradient.cornerRadius = view.layer.cornerRadius
-        view.layer.insertSublayer(gradient, at: 0)
+    static func applyGradient(to view: UIView, colors: [UIColor] = [accent, accentPressed]) {
+        let gradientView = ThemeGradientView(colors: colors)
+        gradientView.translatesAutoresizingMaskIntoConstraints = false
+        gradientView.layer.cornerRadius = view.layer.cornerRadius
+        view.insertSubview(gradientView, at: 0)
+        NSLayoutConstraint.activate([
+            gradientView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            gradientView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            gradientView.topAnchor.constraint(equalTo: view.topAnchor),
+            gradientView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
         view.layer.shadowPath = nil
     }
-
-    // MARK: - Global appearance
 
     static func applyGlobalAppearance() {
         let navigation = UINavigationBarAppearance()
         navigation.configureWithOpaqueBackground()
         navigation.backgroundColor = canvas
-        navigation.shadowColor = .clear
+        navigation.shadowColor = hairline
         navigation.titleTextAttributes = [
             .foregroundColor: textPrimary,
             .font: headline(17, weight: .semibold)
         ]
         navigation.largeTitleTextAttributes = [
             .foregroundColor: textPrimary,
-            .font: headline(32, weight: .bold)
+            .font: largeTitle
         ]
         UINavigationBar.appearance().standardAppearance = navigation
         UINavigationBar.appearance().scrollEdgeAppearance = navigation
         UINavigationBar.appearance().compactAppearance = navigation
-        UINavigationBar.appearance().tintColor = primary
+        UINavigationBar.appearance().tintColor = accentText
 
         let tab = UITabBarAppearance()
-        tab.configureWithDefaultBackground()
-        tab.backgroundColor = glass
+        tab.configureWithOpaqueBackground()
+        tab.backgroundColor = bar
         tab.shadowColor = hairline
         tab.stackedLayoutAppearance.normal.iconColor = textSecondary
         tab.stackedLayoutAppearance.normal.titleTextAttributes = [
             .foregroundColor: textSecondary,
-            .font: body(10, weight: .medium)
+            .font: caption
         ]
-        tab.stackedLayoutAppearance.selected.iconColor = primary
+        tab.stackedLayoutAppearance.selected.iconColor = accentText
         tab.stackedLayoutAppearance.selected.titleTextAttributes = [
-            .foregroundColor: primary,
-            .font: body(10, weight: .semibold)
+            .foregroundColor: accentText,
+            .font: caption
         ]
         UITabBar.appearance().standardAppearance = tab
         UITabBar.appearance().scrollEdgeAppearance = tab
+        UITabBar.appearance().tintColor = accentText
 
         UITableView.appearance().backgroundColor = canvas
-        UISwitch.appearance().onTintColor = primary
+        UISwitch.appearance().onTintColor = accent
+        UIButton.appearance().tintColor = accentText
+    }
+}
+
+private final class ThemeGradientView: UIView {
+    override class var layerClass: AnyClass { CAGradientLayer.self }
+
+    private let palette: [UIColor]
+
+    init(colors: [UIColor]) {
+        palette = colors
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        let gradient = layer as? CAGradientLayer
+        gradient?.startPoint = CGPoint(x: 0, y: 0)
+        gradient?.endPoint = CGPoint(x: 1, y: 1)
+        updateColors()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        updateColors()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerRadius = superview?.layer.cornerRadius ?? 0
+    }
+
+    private func updateColors() {
+        (layer as? CAGradientLayer)?.colors = palette.map {
+            $0.resolvedColor(with: traitCollection).cgColor
+        }
     }
 }
 

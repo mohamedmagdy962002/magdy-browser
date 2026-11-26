@@ -1,28 +1,12 @@
-"""Generates the Magdy Browser app icon (1024x1024 PNG, stdlib only).
-
-Run:  python scripts/generate_icon.py
-"""
+"""Generates canonical Magdy M brand artwork using only the Python standard library."""
 
 import math
 import os
 import struct
 import zlib
 
-SIZE = 1024
-STROKE = 92.0
-
-
-def lerp(a, b, t):
-    return a + (b - a) * t
-
-
-def gradient(x, y):
-    t = (x + y) / (2.0 * SIZE)
-    return (
-        int(lerp(74, 138, t)),
-        int(lerp(71, 63, t)),
-        int(lerp(240, 252, t)),
-    )
+BACKGROUND = (0xEA, 0x54, 0x00)
+FOREGROUND = (0xFE, 0xFB, 0xF8)
 
 
 def segment_distance(px, py, ax, ay, bx, by):
@@ -34,32 +18,34 @@ def segment_distance(px, py, ax, ay, bx, by):
     return math.hypot(dx, dy)
 
 
-def build_pixels():
-    # M shape: left leg, left diagonal, right diagonal, right leg.
+def build_pixels(size):
+    scale = size / 1024.0
+    stroke = 92.0 * scale
     segments = [
-        (300, 300, 300, 740),
-        (300, 740, 512, 470),
-        (512, 470, 724, 740),
-        (724, 740, 724, 300),
+        (300, 740, 300, 300),
+        (300, 300, 512, 520),
+        (512, 520, 724, 300),
+        (724, 300, 724, 740),
+    ]
+    segments = [
+        (ax * scale, ay * scale, bx * scale, by * scale)
+        for ax, ay, bx, by in segments
     ]
     rows = []
-    for y in range(SIZE):
+    for y in range(size):
         row = bytearray()
-        for x in range(SIZE):
-            r, g, b = gradient(x, y)
-            inside = False
-            for (ax, ay, bx, by) in segments:
-                if segment_distance(x + 0.5, y + 0.5, ax, ay, bx, by) <= STROKE / 2:
-                    inside = True
-                    break
-            if inside:
-                r = g = b = 255
-            row += bytes((r, g, b))
+        for x in range(size):
+            inside = any(
+                segment_distance(x + 0.5, y + 0.5, ax, ay, bx, by) <= stroke / 2
+                for ax, ay, bx, by in segments
+            )
+            row += bytes(FOREGROUND if inside else BACKGROUND)
         rows.append(bytes(row))
     return rows
 
 
 def write_png(path, rows):
+    size = len(rows)
     raw = b"".join(b"\x00" + row for row in rows)
 
     def chunk(tag, data):
@@ -70,7 +56,7 @@ def write_png(path, rows):
             + struct.pack(">I", zlib.crc32(payload) & 0xFFFFFFFF)
         )
 
-    header = struct.pack(">IIBBBBB", SIZE, SIZE, 8, 2, 0, 0, 0)
+    header = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
     png = (
         b"\x89PNG\r\n\x1a\n"
         + chunk(b"IHDR", header)
@@ -83,12 +69,14 @@ def write_png(path, rows):
 
 def main():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    out = os.path.join(
-        root, "Resources", "Assets.xcassets", "AppIcon.appiconset", "AppIcon.png"
-    )
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    write_png(out, build_pixels())
-    print(f"wrote {out}")
+    outputs = [
+        (1024, os.path.join(root, "Resources", "Assets.xcassets", "AppIcon.appiconset", "AppIcon.png")),
+        (512, os.path.join(root, "Resources", "Assets.xcassets", "LaunchLogo.imageset", "LaunchLogo.png")),
+    ]
+    for size, path in outputs:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        write_png(path, build_pixels(size))
+        print(f"wrote {path}")
 
 
 if __name__ == "__main__":
