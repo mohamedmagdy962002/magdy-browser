@@ -353,7 +353,6 @@ extension BrowserTab: WKNavigationDelegate {
             generatedNavigation = nil
             isLoadingErrorPage = false
             isLoadingStartPage = false
-            pendingURL = navigation.request.url?.isWebURL == true ? navigation.request.url : nil
         }
         onLoadingChange?(self, true)
         // Old page's feeds must not leak into the new one's menu.
@@ -435,7 +434,7 @@ extension BrowserTab: WKNavigationDelegate {
             isLoadingStartPage = false
             return
         }
-        showLoadError(in: webView, navigation: navigation)
+        showLoadError(in: webView)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -450,14 +449,12 @@ extension BrowserTab: WKNavigationDelegate {
             isLoadingStartPage = false
             return
         }
-        showLoadError(in: webView, navigation: navigation)
+        showLoadError(in: webView)
     }
 
-    private func showLoadError(in webView: WKWebView, navigation: WKNavigation?) {
+    private func showLoadError(in webView: WKWebView) {
         guard !isLoadingErrorPage else { return }
-        if let requested = navigation?.request.url, requested.isWebURL {
-            failedURL = requested
-        } else if let pendingURL, pendingURL.isWebURL {
+        if let pendingURL, pendingURL.isWebURL {
             failedURL = pendingURL
         } else if let current = webView.url, current.isWebURL {
             failedURL = current
@@ -512,6 +509,11 @@ extension BrowserTab: WKNavigationDelegate {
         if navigationAction.shouldPerformDownload {
             decisionHandler(.download)
             return
+        }
+        if navigationAction.targetFrame?.isMainFrame != false,
+           let url = navigationAction.request.url,
+           url.isWebURL {
+            pendingURL = url
         }
         if navigationAction.targetFrame?.isMainFrame != false,
            let url = navigationAction.request.url,
@@ -626,7 +628,7 @@ extension BrowserTab: WKUIDelegate {
     func webView(
         _ webView: WKWebView,
         requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-        initiatedBy frame: WKFrameInfo,
+        initiatedByFrame frame: WKFrameInfo,
         type: WKMediaCaptureType,
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
@@ -636,7 +638,7 @@ extension BrowserTab: WKUIDelegate {
     /// Long-press on a link: open in new tab, private tab, Safari, copy, download.
     func webView(
         _ webView: WKWebView,
-        contextMenuConfigurationFor elementInfo: WKContextMenuElementInfo,
+        contextMenuConfigurationForElement elementInfo: WKContextMenuElementInfo,
         completionHandler: @escaping (UIContextMenuConfiguration?) -> Void
     ) {
         guard let url = elementInfo.linkURL else {

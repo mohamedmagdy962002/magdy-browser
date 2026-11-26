@@ -63,7 +63,7 @@ final class HLSRequest {
 
         tasks.forEach { $0.cancel() }
         handlers.forEach { $0() }
-        finish(.failure(HLSError.cancelled))
+        finish(.failure(HLSDownloader.HLSError.cancelled))
     }
 
     func finish(_ result: Result<URL, Error>) {

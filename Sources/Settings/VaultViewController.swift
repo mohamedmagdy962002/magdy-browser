@@ -43,11 +43,11 @@ final class VaultStore {
     /// leaving a partial destination when the import cannot be completed.
     @discardableResult
     func importItem(at source: URL) -> Bool {
-        queue.sync {
-            guard source.isFileURL, isBasename(source.lastPathComponent) else { return false }
+        queue.sync { () -> Bool in
+            guard source.isFileURL, self.isBasename(source.lastPathComponent) else { return false }
             do {
                 let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                guard values.isRegularFile == true, values.isSymbolicLinkKey != true else { return false }
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { return false }
                 let vault = try protectedDirectory()
                 let name = try uniqueName(source.lastPathComponent, in: vault)
                 let destination = vault.appendingPathComponent(name)
@@ -73,7 +73,7 @@ final class VaultStore {
 
     func remove(_ name: String, completion: (() -> Void)? = nil) {
         queue.async {
-            if isBasename(name) {
+            if self.isBasename(name) {
                 let destination = self.directory.appendingPathComponent(name)
                 if FileManager.default.fileExists(atPath: destination.path) {
                     try? FileManager.default.removeItem(at: destination)
@@ -120,7 +120,7 @@ final class VaultStore {
             guard isBasename(url.lastPathComponent) else { return false }
             do {
                 let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-                guard values.isRegularFile == true, values.isSymbolicLinkKey != true else { return false }
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { return false }
                 try protect(url)
                 return true
             } catch {
@@ -186,7 +186,7 @@ final class VaultStore {
                 } catch {
                     continue
                 }
-                guard values.isRegularFile == true, values.isSymbolicLinkKey != true else { continue }
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
                 let destinationName: String
                 do {
                     destinationName = try uniqueName(name, in: vault)

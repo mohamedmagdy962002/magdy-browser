@@ -139,8 +139,8 @@ enum L {
     static var languageTag: String {
         let raw = language == "system" ? (Locale.preferredLanguages.first ?? "en") : language
         let locale = Locale(identifier: raw)
-        let base = locale.languageCode?.identifier.lowercased() ?? String(raw.prefix(2)).lowercased()
-        if base == "zh", let script = locale.scriptCode?.identifier.lowercased() {
+        let base = locale.languageCode?.lowercased() ?? String(raw.prefix(2)).lowercased()
+        if base == "zh", let script = locale.scriptCode?.lowercased() {
             return "zh-\(script)"
         }
         return base

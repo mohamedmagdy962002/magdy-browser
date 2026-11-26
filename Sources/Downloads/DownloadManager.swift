@@ -83,9 +83,11 @@ enum DownloadDestinationAllocator {
         guard maxBytes > 0 else { return "" }
         var result = ""
         for character in value {
-            let next = result.appending(character)
-            if next.utf8.count > maxBytes { break }
-            result = next
+            result.append(character)
+            if result.utf8.count > maxBytes {
+                result.removeLast()
+                break
+            }
         }
         return result
     }
@@ -295,7 +297,7 @@ final class DownloadManager: NSObject {
                         item.errorMessage = error.localizedDescription
                     }
                 case .failure(let error):
-                    if let hlsError = error as? HLSError, case .cancelled = hlsError {
+                    if let hlsError = error as? HLSDownloader.HLSError, case .cancelled = hlsError {
                         item.state = .cancelled
                     } else {
                         item.state = .failed

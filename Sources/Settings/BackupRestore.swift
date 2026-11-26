@@ -297,7 +297,7 @@ final class BackupViewController: UITableViewController, UIDocumentPickerDelegat
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Backup & Restore"
-        tableView.register(UITableViewCell.self, forCellWithReuseIdentifier: "cell")
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         tableView.backgroundColor = Theme.canvas
         tableView.separatorStyle = .none
     }

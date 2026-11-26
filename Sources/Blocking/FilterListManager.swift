@@ -118,7 +118,7 @@ final class FilterListManager {
             DispatchQueue.global(qos: .utility).async {
                 guard let url = Bundle.main.url(forResource: list.id, withExtension: "txt", subdirectory: "filters"),
                       let text = try? String(contentsOf: url, encoding: .utf8) else {
-                    DispatchQueue.main.async { self?.failedIDs.insert(list.id) }
+                    DispatchQueue.main.async { self.failedIDs.insert(list.id) }
                     group.leave()
                     return
                 }

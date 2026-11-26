@@ -297,9 +297,14 @@ final class SettingsViewController: UITableViewController {
 
     private func presentActionSheet(_ sheet: UIAlertController, from indexPath: IndexPath) {
         if let popover = sheet.popoverPresentationController {
-            let source = tableView.cellForRow(at: indexPath) ?? tableView
+            let source: UIView
+            if let cell = tableView.cellForRow(at: indexPath) {
+                source = cell
+            } else {
+                source = tableView
+            }
             popover.sourceView = source
-            popover.sourceRect = source === tableView ? tableView.bounds : source.bounds
+            popover.sourceRect = source.bounds
         }
         present(sheet, animated: true)
     }

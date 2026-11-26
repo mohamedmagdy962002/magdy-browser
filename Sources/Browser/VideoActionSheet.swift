@@ -81,7 +81,7 @@ final class VideoActionSheet: UIViewController {
         row("Share link", symbol: "square.and.arrow.up") { [weak self] in
             guard let self else { return }
             guard let presenter = VideoActionSheet.presenter(from: self.presentingViewController) else { return }
-            let sourceView = presenter.view
+            guard let sourceView = presenter.view else { return }
             let sourceRect = CGRect(
                 x: sourceView.bounds.midX, y: sourceView.bounds.midY, width: 1, height: 1
             )
