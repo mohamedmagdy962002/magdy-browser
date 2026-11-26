@@ -20,7 +20,14 @@ enum LibraryFilter: Int, CaseIterable {
     }
 
     var identifier: String {
-        "library-filter-\(rawValue)"
+        switch self {
+        case .all: return "library-filter-all"
+        case .downloads: return "library-filter-downloads"
+        case .favorites: return "library-filter-favorites"
+        case .history: return "library-filter-history"
+        case .readingList: return "library-filter-reading-list"
+        case .files: return "library-filter-files"
+        }
     }
 
     var sources: Set<LibraryItemSource>? {

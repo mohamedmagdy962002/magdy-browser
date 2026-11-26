@@ -46,6 +46,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         edgesForExtendedLayout = []
+        extendedLayoutIncludesOpaqueBars = false
+        navigationController?.navigationBar.isTranslucent = false
         view.accessibilityIdentifier = "browser-screen"
         navigationController?.setNavigationBarHidden(traitCollection.horizontalSizeClass != .regular, animated: false)
         view.backgroundColor = .systemBackground
@@ -80,6 +82,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private func updateNavigationChrome(animated: Bool) {
         let regular = traitCollection.horizontalSizeClass == .regular
+        navigationController?.navigationBar.isTranslucent = false
         navigationController?.setNavigationBarHidden(!regular, animated: animated)
         navigationItem.leftBarButtonItem = regular ? navigationController?.splitViewController?.displayModeButtonItem : nil
     }
