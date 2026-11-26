@@ -293,7 +293,7 @@ struct LibrarySnapshot {
             return [item.title, item.subtitle, item.webURL?.absoluteString, item.fileURL?.path]
                 .compactMap { $0 }
                 .contains { $0.localizedCaseInsensitiveContains(trimmed) }
-        }.sorted { ordered($0, $1, sort: sort) }
+        }.sorted { Self.ordered($0, $1, sort: sort) }
     }
 
     private static func canonicalPath(_ url: URL) -> String {
