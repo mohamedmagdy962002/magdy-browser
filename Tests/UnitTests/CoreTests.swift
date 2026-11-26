@@ -166,6 +166,125 @@ final class CoreTests: XCTestCase {
         XCTAssertThrowsError(try BackupRestore.readBackup(at: url))
     }
 
+    func testHLSVariantLabelHandlesMalformedResolution() {
+        XCTAssertEqual(HLSDownloader.variantLabel(height: 1080, bandwidth: 4_000_000), "1080p")
+        XCTAssertEqual(HLSDownloader.variantLabel(height: .infinity, bandwidth: 4_000_000), "4.0 Mbps")
+        XCTAssertEqual(HLSDownloader.variantLabel(height: 1e300, bandwidth: .nan), "0.0 Mbps")
+    }
+
+    func testAdAllowlistKeepsTrackerAndCustomRules() {
+        XCTAssertTrue(BrowserTab.isAdBlockingRuleList("MagdyBlockList.ads"))
+        XCTAssertTrue(BrowserTab.isAdBlockingRuleList("MagdyFilter.easylist"))
+        XCTAssertFalse(BrowserTab.isAdBlockingRuleList("MagdyBlockList.trackers"))
+        XCTAssertFalse(BrowserTab.isAdBlockingRuleList("MagdyFilter.easyprivacy"))
+        XCTAssertFalse(BrowserTab.isAdBlockingRuleList("MagdyFilter.custom.example"))
+    }
+
+    func testSiteDataMatchingDoesNotClearParentDomains() {
+        XCTAssertTrue(BrowserViewController.siteDataRecord("foo.example.com", matches: "foo.example.com"))
+        XCTAssertTrue(BrowserViewController.siteDataRecord("sub.foo.example.com", matches: "foo.example.com"))
+        XCTAssertFalse(BrowserViewController.siteDataRecord("example.com", matches: "foo.example.com"))
+    }
+
+    func testFavoritesValidationAcceptsHostsWithPorts() {
+        XCTAssertEqual(FavoritesStore.validatedWebURL(from: "localhost:8080")?.host, "localhost")
+        XCTAssertEqual(FavoritesStore.validatedWebURL(from: "example.com:8080/video")?.port, 8080)
+        XCTAssertEqual(
+            FavoritesStore.validatedWebURL(from: "example.com:8080/video?x=1#t")?.absoluteString,
+            "https://example.com:8080/video?x=1#t"
+        )
+        XCTAssertNil(FavoritesStore.validatedWebURL(from: "example.com:notaport/video"))
+        XCTAssertNil(FavoritesStore.validatedWebURL(from: "javascript:alert(1)"))
+        XCTAssertNil(FavoritesStore.validatedWebURL(from: "file:///private/document.pdf"))
+    }
+
+    func testBackupRejectsUnsafeNumericPreferences() throws {
+        let cases: [(String, Any)] = [
+            (BrowserTab.textZoomKey, 1e300),
+            ("magdy.zoomPerSite", ["example.com": 1e300]),
+            (BlockStats.countKey, -1),
+            ("magdy.futureNumber", 1e300)
+        ]
+        for (key, value) in cases {
+            let encoded = try PropertyListSerialization.data(fromPropertyList: value, format: .binary, options: 0)
+            let backup = BackupRestore.Backup(version: 1, defaults: [key: encoded], history: nil)
+            let data = try JSONEncoder().encode(backup)
+            XCTAssertFalse(BackupRestore.restore(from: data), key)
+        }
+    }
+
+    func testBackupExcludesDownloadFolderMetadata() throws {
+        let nameKey = DownloadManager.folderBookmarkKey + ".name"
+        let previous = UserDefaults.standard.object(forKey: nameKey)
+        UserDefaults.standard.set("Private Folder", forKey: nameKey)
+        defer {
+            if let previous { UserDefaults.standard.set(previous, forKey: nameKey) }
+            else { UserDefaults.standard.removeObject(forKey: nameKey) }
+        }
+
+        let data = try XCTUnwrap(BackupRestore.exportData())
+        let backup = try JSONDecoder().decode(BackupRestore.Backup.self, from: data)
+        XCTAssertFalse(backup.defaults.keys.contains { $0.hasPrefix(DownloadManager.folderBookmarkKey) })
+    }
+
+    func testBlockStatsSaturatesRestoredCounter() {
+        let previous = UserDefaults.standard.object(forKey: BlockStats.countKey)
+        UserDefaults.standard.set(Int.max, forKey: BlockStats.countKey)
+        defer {
+            if let previous { UserDefaults.standard.set(previous, forKey: BlockStats.countKey) }
+            else { UserDefaults.standard.removeObject(forKey: BlockStats.countKey) }
+        }
+        BlockStats.shared.add(1)
+        XCTAssertEqual(BlockStats.shared.total, Int.max)
+    }
+
+    func testID3UTF16CommentAndArtwork() throws {
+        func syncSafe(_ value: Int) -> Data {
+            Data([
+                UInt8((value >> 21) & 0x7F),
+                UInt8((value >> 14) & 0x7F),
+                UInt8((value >> 7) & 0x7F),
+                UInt8(value & 0x7F)
+            ])
+        }
+        func frame(_ identifier: String, _ payload: Data) -> Data {
+            Data(identifier.utf8) + syncSafe(payload.count) + Data([0, 0]) + payload
+        }
+        func utf16(_ value: String) -> Data {
+            var data = Data([0xFE, 0xFF])
+            for unit in value.utf16 {
+                data.append(UInt8(unit >> 8))
+                data.append(UInt8(unit & 0xFF))
+            }
+            return data
+        }
+
+        let image = Data([0xFF, 0xD8, 0xFF, 0xD9])
+        let description = utf16("cover")
+        let comment = Data([1]) + Data("eng".utf8) + description + Data([0, 0]) + utf16("A comment")
+        let picture = Data([1]) + Data("image/jpeg".utf8) + Data([0, 3]) + description + Data([0, 0]) + image
+        let body = frame("COMM", comment) + frame("APIC", picture)
+        var existing = Data("ID3".utf8)
+        existing.append(contentsOf: [4, 0, 0])
+        existing.append(syncSafe(body.count))
+        existing.append(body)
+
+        let parsed = try ID3.read(data: existing)
+        XCTAssertEqual(parsed.comment, "A comment")
+        XCTAssertEqual(parsed.artwork, image)
+        XCTAssertEqual(parsed.artworkMimeType, "image/jpeg")
+
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("sample.mp3")
+        try (existing + Data([0xFF, 0xFB, 0x90, 0x64])).write(to: url)
+        try ID3.write(parsed, to: url)
+        let roundTrip = try ID3.read(from: url)
+        XCTAssertEqual(roundTrip.comment, "A comment")
+        XCTAssertEqual(roundTrip.artwork, image)
+    }
+
     func testID3ExtendedHeaderPreservesFramesAndAudio() throws {
         func syncSafe(_ value: Int) -> Data {
             Data([
@@ -188,7 +307,7 @@ final class CoreTests: XCTestCase {
         body.append(frame("TPOS", disc))
 
         var existing = Data("ID3".utf8)
-        existing.append(contentsOf: [4, 0, 0x10])
+        existing.append(contentsOf: [4, 0, 0x50])
         existing.append(syncSafe(body.count))
         existing.append(body)
         existing.append(contentsOf: Array("3DI".utf8))

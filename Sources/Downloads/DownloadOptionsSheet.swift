@@ -137,7 +137,7 @@ final class DownloadOptionsSheet: UIViewController {
             addBest()
             return
         }
-        HLSDownloader.variants(playlist: url, cookies: cookies) { [weak self] options in
+        HLSDownloader.variants(playlist: url, cookies: cookies, referer: referer) { [weak self] options in
             DispatchQueue.main.async {
                 guard let self else { return }
                 if options.isEmpty {
@@ -226,8 +226,10 @@ final class DownloadOptionsSheet: UIViewController {
 extension DownloadOptionsSheet: UIDocumentPickerDelegate {
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let folder = urls.first else { return }
+        let hasAccess = folder.startAccessingSecurityScopedResource()
+        defer { if hasAccess { folder.stopAccessingSecurityScopedResource() } }
         do {
-            let bookmark = try folder.bookmarkData()
+            let bookmark = try folder.bookmarkData(options: .withSecurityScope)
             UserDefaults.standard.set(bookmark, forKey: DownloadManager.folderBookmarkKey)
             UserDefaults.standard.set(folder.lastPathComponent, forKey: DownloadManager.folderBookmarkKey + ".name")
             folderButton.setTitle(folder.lastPathComponent, for: .normal)

@@ -68,7 +68,18 @@ final class BrowserTab: NSObject {
 
     // MARK: - Per-site ad allowlist
 
-    /// True when the user exempted this host from ad/tracker blocking.
+    static func isAdBlockingRuleList(_ identifier: String) -> Bool {
+        [
+            "MagdyBlockList.ads",
+            "MagdyFilter.easylist",
+            "MagdyFilter.easylist_germany",
+            "MagdyFilter.fanboy_annoyance",
+            "MagdyFilter.fanboy_social",
+            "MagdyFilter.peter_lowe"
+        ].contains(identifier)
+    }
+
+    /// True when the user exempted this host from ad blocking.
     static func isAdAllowed(_ host: String?) -> Bool {
         guard let host else { return false }
         let allowed = UserDefaults.standard.stringArray(forKey: "magdy.adAllowedSites") ?? []
@@ -104,21 +115,14 @@ final class BrowserTab: NSObject {
 
     func applyNewRuleLists() {
         let controller = webView.configuration.userContentController
-        if isAdAllowed(webView.url?.host) {
-            // Exempted site: detach every rule list, including ones attached earlier.
-            for (id, list) in appliedRuleLists {
-                controller.remove(list)
-                appliedRuleLists.removeValue(forKey: id)
-            }
-            return
-        }
+        let allowsAds = isAdAllowed(webView.url?.host)
         let activeIDs = Set(ContentBlocker.shared.ruleLists.map(\.identifier))
-        // Detach rule lists that were disabled or replaced since they were applied.
+            .filter { !allowsAds || !Self.isAdBlockingRuleList($0) }
         for (id, list) in appliedRuleLists where !activeIDs.contains(id) {
             controller.remove(list)
             appliedRuleLists.removeValue(forKey: id)
         }
-        for list in ContentBlocker.shared.ruleLists where appliedRuleLists[list.identifier] == nil {
+        for list in ContentBlocker.shared.ruleLists where activeIDs.contains(list.identifier), appliedRuleLists[list.identifier] == nil {
             appliedRuleLists[list.identifier] = list
             controller.add(list)
         }
@@ -682,8 +686,8 @@ extension BrowserTab: WKUIDelegate {
         }
         let config = UIContextMenuConfiguration(actionProvider: { [weak self] _ in
             var actions: [UIMenuElement] = [
-                UIAction(title: "Open in New Tab", image: UIImage(systemName: "plus.square.on.square")) { _ in
-                    NotificationCenter.default.post(name: .magdyOpenURL, object: url)
+                UIAction(title: "Open in New Tab", image: UIImage(systemName: "plus.square.on.square")) { [weak self] _ in
+                    self?.onOpenLink?(url, self?.isPrivate == true)
                 },
                 UIAction(title: "Open in Private Tab", image: UIImage(systemName: "eye.slash")) { _ in
                     self?.onOpenLink?(url, true)

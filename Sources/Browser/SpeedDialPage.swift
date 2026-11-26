@@ -175,7 +175,8 @@ enum SpeedDialPage {
     private static func color(for host: String) -> String {
         let palette = ["#8B5CF6", "#A78BFA", "#6C5CE7", "#0A84FF", "#30D158", "#FF9F0A", "#FF375F", "#64D2FF"]
         let hash = host.unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) }
-        return palette[abs(hash) % palette.count]
+        let remainder = hash % palette.count
+        return palette[(remainder + palette.count) % palette.count]
     }
 
     static func escape(_ text: String) -> String {

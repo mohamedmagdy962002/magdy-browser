@@ -150,7 +150,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
               let object = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
               let value = object.stringValue,
               let url = URL(string: value),
-              url.scheme == "http" || url.scheme == "https" else { return }
+              url.isWebURL else { return }
         fired = true
         stopSession()
         dismiss(animated: true) { [weak self] in

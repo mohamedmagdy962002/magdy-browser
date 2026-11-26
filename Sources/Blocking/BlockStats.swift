@@ -13,7 +13,9 @@ final class BlockStats {
 
     func add(_ count: Int) {
         guard count > 0 else { return }
-        UserDefaults.standard.set(total + count, forKey: Self.countKey)
+        let current = max(0, total)
+        let result = current.addingReportingOverflow(count)
+        UserDefaults.standard.set(result.overflow ? Int.max : result.partialValue, forKey: Self.countKey)
         NotificationCenter.default.post(name: .magdyBlockStatsChanged, object: nil)
     }
 

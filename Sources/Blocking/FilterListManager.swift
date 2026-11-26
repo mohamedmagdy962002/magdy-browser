@@ -165,6 +165,10 @@ final class FilterListManager {
             ) { [weak self] ruleList, _ in
                 DispatchQueue.main.async {
                     guard let self else { completion?(false); return }
+                    guard CustomFilterListStore.shared.entries.contains(where: { "custom.\($0.id.uuidString)" == id }) else {
+                        completion?(false)
+                        return
+                    }
                     if let ruleList {
                         self.compiled[id] = ruleList
                         self.failedIDs.remove(id)
@@ -198,11 +202,16 @@ final class FilterListManager {
                 encodedContentRuleList: encoded
             ) { [weak self] ruleList, _ in
                 DispatchQueue.main.async {
+                    guard let self else { completion?(false); return }
+                    guard CustomFilterListStore.shared.entries.contains(where: { "custom.\($0.id.uuidString)" == id }) else {
+                        completion?(false)
+                        return
+                    }
                     if let ruleList {
-                        self?.compiled[id] = ruleList
-                        self?.failedIDs.remove(id)
+                        self.compiled[id] = ruleList
+                        self.failedIDs.remove(id)
                     } else {
-                        self?.failedIDs.insert(id)
+                        self.failedIDs.insert(id)
                     }
                     completion?(ruleList != nil)
                 }

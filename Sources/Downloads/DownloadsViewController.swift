@@ -46,7 +46,20 @@ final class DownloadsViewController: UITableViewController, UISearchResultsUpdat
     }
 
     @objc private func clearFinished() {
-        manager.clearFinished()
+        let count = manager.items.filter {
+            $0.state == .finished || $0.state == .failed || $0.state == .cancelled
+        }.count
+        guard count > 0 else { return }
+        let alert = UIAlertController(
+            title: "Delete download history?",
+            message: "\(count) finished, failed, or cancelled downloads will be permanently removed, including their delivered files.",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
+            self?.manager.clearFinished()
+        })
+        present(alert, animated: true)
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {

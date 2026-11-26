@@ -153,15 +153,11 @@ final class VoiceSearchViewController: UIViewController {
     }
 
     private func finish() {
-        request?.endAudio()
-        // The user tapped to stop: hand over whatever was transcribed so far.
-        if let text = resultLabel.text, !text.isEmpty {
-            onText?(text)
-            stopListening()
-            dismiss(animated: true)
-            return
-        }
-        statusLabel.text = "Tap to speak"
+        let text = resultLabel.text ?? ""
+        stopListening()
+        guard !text.isEmpty else { return }
+        onText?(text)
+        dismiss(animated: true)
     }
 
     private func stopListening() {

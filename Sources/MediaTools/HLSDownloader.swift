@@ -90,6 +90,8 @@ enum HLSDownloader {
         case segment(Int)
         case httpStatus(Int)
         case invalidResponse
+        case responseTooLarge
+        case recursivePlaylist
         case missingPart(Int)
         case cancelled
         case exportFailed(String)
@@ -102,6 +104,8 @@ enum HLSDownloader {
             case .segment(let index): return "Segment \(index) failed to download."
             case .httpStatus(let status): return "The stream server returned HTTP \(status)."
             case .invalidResponse: return "The stream server returned an invalid response."
+            case .responseTooLarge: return "A playlist or segment exceeded the safe response size."
+            case .recursivePlaylist: return "The stream contains a recursive playlist."
             case .missingPart(let index): return "Segment \(index) is missing."
             case .cancelled: return "The download was cancelled."
             case .exportFailed(let message): return "Could not create the video: \(message)"
@@ -123,8 +127,13 @@ enum HLSDownloader {
 
     /// Lists the qualities of a master playlist, highest resolution first.
     /// Empty result = media playlist (single quality).
-    static func variants(playlist url: URL, cookies: [HTTPCookie], completion: @escaping ([VariantOption]) -> Void) {
-        fetchText(url, cookies: cookies) { result in
+    static func variants(
+        playlist url: URL,
+        cookies: [HTTPCookie],
+        referer: URL? = nil,
+        completion: @escaping ([VariantOption]) -> Void
+    ) {
+        fetchText(url, cookies: cookies, referer: referer) { result in
             switch result {
             case .failure:
                 completion([])
@@ -151,34 +160,49 @@ enum HLSDownloader {
                             .first { $0.hasPrefix("BANDWIDTH=") }?
                             .replacingOccurrences(of: "BANDWIDTH=", with: "") ?? "0"
                     ) ?? 0
-                    let label = height > 0
-                        ? "\(Int(height))p"
-                        : String(format: "%.1f Mbps", bandwidth / 1_000_000)
-                    options.append(VariantOption(label: label, url: resolved))
+                    options.append(VariantOption(label: variantLabel(height: height, bandwidth: bandwidth), url: resolved))
                 }
                 completion(options)
             }
         }
     }
 
+    static func variantLabel(height: Double, bandwidth: Double) -> String {
+        if height.isFinite, height > 0, let exactHeight = Int(exactly: height) {
+            return "\(exactHeight)p"
+        }
+        let safeBandwidth = bandwidth.isFinite && bandwidth >= 0 ? bandwidth : 0
+        return String(format: "%.1f Mbps", safeBandwidth / 1_000_000)
+    }
+
     static func download(
         playlist url: URL,
         cookies: [HTTPCookie],
+        referer: URL? = nil,
         progress: @escaping (Double) -> Void,
         completion: @escaping (Result<URL, Error>) -> Void
     ) {
-        startDownload(playlist: url, cookies: cookies, progress: progress, completion: completion)
+        startDownload(playlist: url, cookies: cookies, referer: referer, progress: progress, completion: completion)
     }
 
     @discardableResult
     static func startDownload(
         playlist url: URL,
         cookies: [HTTPCookie],
+        referer: URL? = nil,
         progress: @escaping (Double) -> Void,
         completion: @escaping (Result<URL, Error>) -> Void
     ) -> HLSRequest {
         let request = HLSRequest(completion: completion)
-        download(playlist: url, cookies: cookies, request: request, progress: progress)
+        download(
+            playlist: url,
+            cookies: cookies,
+            referer: referer,
+            request: request,
+            visited: [],
+            depth: 0,
+            progress: progress
+        )
         return request
     }
 
@@ -188,11 +212,12 @@ enum HLSDownloader {
         var best: Variant?
         let lines = text.components(separatedBy: .newlines)
         for (index, line) in lines.enumerated() where line.contains("#EXT-X-STREAM-INF") {
-            let bandwidth = Double(
+            let parsedBandwidth = Double(
                 line.split(separator: ",")
                     .first { $0.hasPrefix("BANDWIDTH=") }?
                     .replacingOccurrences(of: "BANDWIDTH=", with: "") ?? "0"
             ) ?? 0
+            let bandwidth = parsedBandwidth.isFinite && parsedBandwidth >= 0 ? parsedBandwidth : 0
             guard index + 1 < lines.count else { continue }
             let candidate = lines[index + 1].trimmingCharacters(in: .whitespaces)
             guard !candidate.isEmpty, !candidate.hasPrefix("#"),
@@ -227,18 +252,33 @@ enum HLSDownloader {
     // MARK: - Download
 
     private static let maxConcurrent = 4
+    private static let maxPlaylistBytes: Int64 = 8_388_608
+    private static let maxSegmentBytes: Int64 = 2_147_483_648
+    private static let maxPlaylistDepth = 8
 
     private static func download(
         playlist url: URL,
         cookies: [HTTPCookie],
+        referer: URL?,
         request: HLSRequest,
+        visited: Set<String>,
+        depth: Int,
         progress: @escaping (Double) -> Void
     ) {
         guard !request.isCancelled else {
             request.finish(.failure(HLSError.cancelled))
             return
         }
-        fetchText(url, cookies: cookies, request: request) { result in
+        guard depth <= maxPlaylistDepth else {
+            request.finish(.failure(HLSError.recursivePlaylist))
+            return
+        }
+        var visited = visited
+        guard visited.insert(playlistKey(url)).inserted else {
+            request.finish(.failure(HLSError.recursivePlaylist))
+            return
+        }
+        fetchText(url, cookies: cookies, referer: referer, request: request) { result in
             guard !request.isCancelled else {
                 request.finish(.failure(HLSError.cancelled))
                 return
@@ -252,9 +292,24 @@ enum HLSDownloader {
                         request.finish(.failure(HLSError.badPlaylist))
                         return
                     }
-                    download(playlist: variant.url, cookies: cookies, request: request, progress: progress)
+                    download(
+                        playlist: variant.url,
+                        cookies: cookies,
+                        referer: referer,
+                        request: request,
+                        visited: visited,
+                        depth: depth + 1,
+                        progress: progress
+                    )
                 } else {
-                    downloadSegments(in: text, base: url, cookies: cookies, request: request, progress: progress)
+                    downloadSegments(
+                        in: text,
+                        base: url,
+                        cookies: cookies,
+                        referer: referer,
+                        request: request,
+                        progress: progress
+                    )
                 }
             }
         }
@@ -264,6 +319,7 @@ enum HLSDownloader {
         in text: String,
         base: URL,
         cookies: [HTTPCookie],
+        referer: URL?,
         request: HLSRequest,
         progress: @escaping (Double) -> Void
     ) {
@@ -305,7 +361,14 @@ enum HLSDownloader {
                     return
                 }
                 let fileURL = workDir.appendingPathComponent("\(index).part")
-                fetchData(segmentURL, cookies: cookies, request: request) { result in
+                fetchFile(
+                    segmentURL,
+                    cookies: cookies,
+                    referer: referer,
+                    request: request,
+                    maximumBytes: maxSegmentBytes,
+                    destination: fileURL
+                ) { result in
                     defer {
                         semaphore.signal()
                         group.leave()
@@ -320,16 +383,6 @@ enum HLSDownloader {
                     lock.unlock()
                     DispatchQueue.main.async {
                         if !request.isCancelled { progress(ratio) }
-                    }
-                    if case .success(let data) = result {
-                        do {
-                            try data.write(to: fileURL, options: .atomic)
-                        } catch {
-                            lock.lock()
-                            errors[index] = error
-                            lock.unlock()
-                            try? FileManager.default.removeItem(at: fileURL)
-                        }
                     }
                 }
             }
@@ -499,15 +552,33 @@ enum HLSDownloader {
     private static func fetchText(
         _ url: URL,
         cookies: [HTTPCookie],
+        referer: URL?,
         request: HLSRequest? = nil,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
-        fetchData(url, cookies: cookies, request: request) { result in
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hls-playlist-\(UUID().uuidString)", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        fetchFile(
+            url,
+            cookies: cookies,
+            referer: referer,
+            request: request,
+            maximumBytes: maxPlaylistBytes,
+            destination: folder.appendingPathComponent("playlist.m3u8")
+        ) { result in
+            defer { try? FileManager.default.removeItem(at: folder) }
             switch result {
             case .failure(let error):
                 completion(.failure(error))
-            case .success(let data):
-                guard let text = String(data: data, encoding: .utf8) else {
+            case .success(let fileURL):
+                guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe),
+                      let text = String(data: data, encoding: .utf8) else {
                     completion(.failure(HLSError.badPlaylist))
                     return
                 }
@@ -516,55 +587,185 @@ enum HLSDownloader {
         }
     }
 
-    private static func fetchData(
+    private static func fetchFile(
         _ url: URL,
         cookies: [HTTPCookie],
-        request: HLSRequest? = nil,
-        completion: @escaping (Result<Data, Error>) -> Void
+        referer: URL?,
+        request: HLSRequest?,
+        maximumBytes: Int64,
+        destination: URL,
+        completion: @escaping (Result<URL, Error>) -> Void
     ) {
         if request?.isCancelled == true {
             completion(.failure(HLSError.cancelled))
             return
         }
-        var urlRequest = URLRequest(url: url)
-        let matching = cookies.filter { $0.applies(to: url) }
-        if !matching.isEmpty, let header = HTTPCookie.requestHeaderFields(with: matching)["Cookie"] {
-            urlRequest.setValue(header, forHTTPHeaderField: "Cookie")
+        let download = HLSFileDownload(
+            request: request,
+            taskID: UUID(),
+            maximumBytes: maximumBytes,
+            destination: destination,
+            completion: completion
+        )
+        download.start(hlsRequest(url, cookies: cookies, referer: referer))
+    }
+
+    private final class HLSFileDownload: NSObject, URLSessionDownloadDelegate {
+        private let request: HLSRequest?
+        private let taskID: UUID
+        private let maximumBytes: Int64
+        private let destination: URL
+        private let completion: (Result<URL, Error>) -> Void
+        private let lock = NSLock()
+        private var completed = false
+        private var session: URLSession?
+
+        init(
+            request: HLSRequest?,
+            taskID: UUID,
+            maximumBytes: Int64,
+            destination: URL,
+            completion: @escaping (Result<URL, Error>) -> Void
+        ) {
+            self.request = request
+            self.taskID = taskID
+            self.maximumBytes = maximumBytes
+            self.destination = destination
+            self.completion = completion
+            super.init()
+            session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         }
-        let completionLock = NSLock()
-        var didComplete = false
-        let complete: (Result<Data, Error>) -> Void = { result in
-            completionLock.lock()
-            guard !didComplete else {
-                completionLock.unlock()
+
+        func start(_ urlRequest: URLRequest) {
+            guard let session else {
+                finish(.failure(HLSError.invalidResponse))
                 return
             }
-            didComplete = true
-            completionLock.unlock()
+            let task = session.downloadTask(with: urlRequest)
+            if let request, !request.add(task, id: taskID) {
+                task.cancel()
+                finish(.failure(HLSError.cancelled))
+                return
+            }
+            task.resume()
+        }
+
+        func urlSession(
+            _ session: URLSession,
+            downloadTask: URLSessionDownloadTask,
+            didWriteData bytesWritten: Int64,
+            totalBytesWritten: Int64,
+            totalBytesExpectedToWrite: Int64
+        ) {
+            lock.lock()
+            let isComplete = completed
+            lock.unlock()
+            guard !isComplete else { return }
+            guard totalBytesWritten <= maximumBytes,
+                  totalBytesExpectedToWrite <= 0 || totalBytesExpectedToWrite <= maximumBytes else {
+                downloadTask.cancel()
+                finish(.failure(HLSError.responseTooLarge))
+                return
+            }
+        }
+
+        func urlSession(
+            _ session: URLSession,
+            downloadTask: URLSessionDownloadTask,
+            didFinishDownloadingTo location: URL
+        ) {
+            if let http = downloadTask.response as? HTTPURLResponse,
+               !(200..<300).contains(http.statusCode) {
+                finish(.failure(HLSError.httpStatus(http.statusCode)))
+                return
+            }
+            do {
+                let values = try location.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+                guard values.isRegularFile != false,
+                      let size = values.fileSize,
+                      Int64(size) <= maximumBytes else {
+                    finish(.failure(HLSError.responseTooLarge))
+                    return
+                }
+                try FileManager.default.moveItem(at: location, to: destination)
+                finish(.success(destination))
+            } catch {
+                finish(.failure(error))
+            }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            if let error {
+                finish(.failure(error))
+            }
+        }
+
+        private func finish(_ result: Result<URL, Error>) {
+            lock.lock()
+            guard !completed else {
+                lock.unlock()
+                return
+            }
+            completed = true
+            lock.unlock()
+
+            request?.remove(id: taskID)
+            if case .failure = result {
+                try? FileManager.default.removeItem(at: destination)
+            }
+            let session = self.session
+            self.session = nil
+            session?.invalidateAndCancel()
             completion(result)
         }
-        let taskID = UUID()
-        let task = URLSession.shared.dataTask(with: urlRequest) { data, response, error in
-            request?.remove(id: taskID)
-            if let error {
-                complete(.failure(error))
-                return
-            }
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                complete(.failure(HLSError.httpStatus(http.statusCode)))
-                return
-            }
-            guard let data else {
-                complete(.failure(HLSError.invalidResponse))
-                return
-            }
-            complete(.success(data))
+    }
+
+    private static func hlsRequest(_ url: URL, cookies: [HTTPCookie], referer: URL?) -> URLRequest {
+        var request = URLRequest(url: url)
+        let matching = cookies.filter { $0.applies(to: url) }
+        if !matching.isEmpty, let header = HTTPCookie.requestHeaderFields(with: matching)["Cookie"] {
+            request.setValue(header, forHTTPHeaderField: "Cookie")
         }
-        if let request, !request.add(task, id: taskID) {
-            task.cancel()
-            complete(.failure(HLSError.cancelled))
-            return
+        guard let referer, referer.isWebURL else { return request }
+        var components = URLComponents(url: referer, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        components?.user = nil
+        components?.password = nil
+        if sameOrigin(referer, url) {
+            if let value = components?.url?.absoluteString {
+                request.setValue(value, forHTTPHeaderField: "Referer")
+            }
+        } else {
+            var origin = URLComponents()
+            origin.scheme = referer.scheme
+            origin.host = referer.host
+            origin.port = referer.port
+            origin.path = "/"
+            if let value = origin.url?.absoluteString {
+                request.setValue(value, forHTTPHeaderField: "Referer")
+            }
         }
-        task.resume()
+        return request
+    }
+
+    private static func sameOrigin(_ first: URL, _ second: URL) -> Bool {
+        first.scheme?.lowercased() == second.scheme?.lowercased()
+            && first.host?.lowercased() == second.host?.lowercased()
+            && effectivePort(first) == effectivePort(second)
+    }
+
+    private static func effectivePort(_ url: URL) -> Int? {
+        if let port = url.port { return port }
+        switch url.scheme?.lowercased() {
+        case "http": return 80
+        case "https": return 443
+        default: return nil
+        }
+    }
+
+    private static func playlistKey(_ url: URL) -> String {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        return components?.url?.absoluteString ?? url.absoluteString
     }
 }

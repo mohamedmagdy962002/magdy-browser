@@ -90,17 +90,27 @@ final class FavoritesStore {
         }
     }
 
-    private static func validatedWebURL(from rawValue: String) -> URL? {
+    static func validatedWebURL(from rawValue: String) -> URL? {
         let text = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        if let parsed = URL(string: text), let scheme = parsed.scheme, !scheme.isEmpty {
-            guard scheme.lowercased() == "http" || scheme.lowercased() == "https" else { return nil }
-        } else {
-            // Accept bare hosts such as example.com, but not relative paths.
-            guard !text.hasPrefix("/"), !text.hasPrefix("."), !text.hasPrefix("?"), !text.hasPrefix("#"),
-                  !text.contains("\\"), !text.contains("/../"), !text.hasSuffix("/.."),
-                  text.contains(".") || text.lowercased() == "localhost" || text.hasPrefix("[") else { return nil }
+        if let colon = text.firstIndex(of: ":"), colon > text.startIndex {
+            let prefix = text[..<colon]
+            let isScheme = prefix.first?.isLetter == true && prefix.allSatisfy {
+                $0.isLetter || $0.isNumber || $0 == "+" || $0 == "-" || $0 == "."
+            }
+            if isScheme {
+                let suffix = text[text.index(after: colon)...]
+                let authority = suffix.prefix { !"/?#".contains($0) }
+                let port = !authority.isEmpty && authority.allSatisfy { $0.isNumber }
+                if !port {
+                    guard suffix.hasPrefix("//"),
+                          prefix.lowercased() == "http" || prefix.lowercased() == "https" else { return nil }
+                }
+            }
         }
+        guard !text.hasPrefix("/"), !text.hasPrefix("."), !text.hasPrefix("?"), !text.hasPrefix("#"),
+              !text.contains("\\"), !text.contains("/../"), !text.hasSuffix("/.."),
+              text.contains(".") || text.lowercased() == "localhost" || text.lowercased().hasPrefix("localhost:") || text.hasPrefix("[") else { return nil }
         guard let url = URL.webURL(from: text), url.isWebURL else { return nil }
         return url
     }

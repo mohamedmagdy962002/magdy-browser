@@ -239,7 +239,6 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         view.addSubview(webContainer)
         view.addSubview(omnibox)
         omnibox.addSubview(addressRow)
-        omnibox.accessibilityElements = [addressField, reloadButton]
         view.addSubview(progressBar)
         view.addSubview(toolbarChrome)
         toolbarChrome.addSubview(toolbar)
@@ -537,11 +536,12 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     /// Lists the feeds found on the page; tapping one opens it.
     private func showRSSFeeds(_ feeds: [String]) {
+        let privateMode = activeTab?.isPrivate == true
         let sheet = UIAlertController(title: "Feeds on this page", message: nil, preferredStyle: .actionSheet)
         for feed in feeds {
             sheet.addAction(UIAlertAction(title: feed, style: .default) { [weak self] _ in
                 guard let url = URL(string: feed) else { return }
-                self?.open(url: url, privateMode: false)
+                self?.open(url: url, privateMode: privateMode)
             })
         }
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
@@ -590,14 +590,18 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         ]
         let store = tab.webView.configuration.websiteDataStore
         store.fetchDataRecords(ofTypes: types) { records in
-            let matching = records.filter {
-                host == $0.displayName || host.hasSuffix(".\($0.displayName)") || $0.displayName.hasSuffix(".\(host)")
-            }
+            let matching = records.filter { Self.siteDataRecord($0.displayName, matches: host) }
             guard !matching.isEmpty else { return }
             store.removeData(ofTypes: types, for: matching) {
                 DispatchQueue.main.async { tab.reload() }
             }
         }
+    }
+
+    static func siteDataRecord(_ displayName: String, matches host: String) -> Bool {
+        let normalizedHost = host.lowercased()
+        let normalizedDomain = displayName.lowercased()
+        return normalizedHost == normalizedDomain || normalizedDomain.hasSuffix(".\(normalizedHost)")
     }
 
     // MARK: - Video downloader

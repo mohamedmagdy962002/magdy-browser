@@ -55,6 +55,7 @@ enum BackupRestore {
 
     private static let version = 1
     static let maxBackupBytes = 25_000_000
+    private static let maxSafeRestoredNumber = 9_000_000_000_000_000_000.0
     private static let omittedDataNotice = "Vault media, downloads and custom-filter files are not included in backups."
     private static let excludedPreferenceKeys: Set<String> = [
         "magdy.vault.entries",
@@ -208,7 +209,9 @@ enum BackupRestore {
     }
 
     private static func isExcludedPreference(_ key: String) -> Bool {
-        excludedPreferenceKeys.contains(key) || key.hasPrefix("magdy.playback.")
+        excludedPreferenceKeys.contains(key)
+            || key.hasPrefix("magdy.playback.")
+            || key.hasPrefix(DownloadManager.folderBookmarkKey + ".")
     }
 
     private static func isSafePreferenceName(_ name: String) -> Bool {
@@ -248,6 +251,24 @@ enum BackupRestore {
             guard let ids = value as? [String], ids.allSatisfy({ !$0.isEmpty }) else {
                 throw BackupError.invalidPayload(key)
             }
+        case BrowserTab.textZoomKey:
+            guard let number = value as? NSNumber,
+                  number.doubleValue.isFinite,
+                  (50...200).contains(number.doubleValue) else {
+                throw BackupError.invalidPayload(key)
+            }
+        case "magdy.zoomPerSite":
+            guard let sites = value as? [String: Any], sites.values.allSatisfy({ value in
+                guard let number = value as? NSNumber else { return false }
+                return number.doubleValue.isFinite && (50...200).contains(number.doubleValue)
+            }) else {
+                throw BackupError.invalidPayload(key)
+            }
+        case BlockStats.countKey:
+            guard let number = value as? NSNumber,
+                  let count = Int(exactly: number.doubleValue), count >= 0 else {
+                throw BackupError.invalidPayload(key)
+            }
         case "magdy.vault.entries":
             guard let names = value as? [String], names.allSatisfy({ isSafeBasename($0) }) else {
                 throw BackupError.invalidPayload(key)
@@ -265,7 +286,10 @@ enum BackupRestore {
     }
 
     private static func isSupportedPreferenceValue(_ value: Any) -> Bool {
-        if value is String || value is Data || value is Date || value is NSNumber { return true }
+        if value is String || value is Data || value is Date { return true }
+        if let number = value as? NSNumber {
+            return number.doubleValue.isFinite && abs(number.doubleValue) <= maxSafeRestoredNumber
+        }
         if let array = value as? [Any] { return array.allSatisfy({ isSupportedPreferenceValue($0) }) }
         if let dictionary = value as? [String: Any] {
             return dictionary.values.allSatisfy({ isSupportedPreferenceValue($0) })

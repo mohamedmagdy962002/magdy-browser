@@ -284,6 +284,7 @@ final class DownloadManager: NSObject {
         let request = HLSDownloader.startDownload(
             playlist: url,
             cookies: cookies,
+            referer: referer,
             progress: { [weak self] value in
                 item.progress = value
                 self?.notify()

@@ -17,6 +17,7 @@ final class VideoDownloaderViewController: UITableViewController {
     private var scannedURL: URL?
     private var pendingURL: URL?
     private var scanGeneration = 0
+    private weak var activeScanNavigation: WKNavigation?
 
     private static let directExtensions: Set<String> = [
         "m3u8", "mpd", "mp4", "m4v", "mov", "webm", "mkv", "avi",
@@ -163,6 +164,7 @@ final class VideoDownloaderViewController: UITableViewController {
 
         if let kind = directKind(for: url) {
             scanner.stopLoading()
+            activeScanNavigation = nil
             guard kind != .dash else {
                 statusLabel.text = "DASH manifests are not supported. Open the page and choose another source."
                 return
@@ -179,7 +181,8 @@ final class VideoDownloaderViewController: UITableViewController {
         }
 
         statusLabel.text = "Loading \(url.host ?? url.absoluteString)…"
-        scanner.load(URLRequest(url: url))
+        let navigation = scanner.load(URLRequest(url: url))
+        if scanGeneration == generation { activeScanNavigation = navigation }
     }
 
     private func directKind(for url: URL) -> MediaCandidate.Kind? {
@@ -272,6 +275,7 @@ extension VideoDownloaderViewController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === scanner, activeScanNavigation === navigation else { return }
         statusLabel.text = "Scanning…"
         let generation = scanGeneration
         MediaScanner.scan(webView: webView) { [weak self] candidates in
@@ -287,12 +291,14 @@ extension VideoDownloaderViewController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        guard (error as NSError).code != NSURLErrorCancelled else { return }
+        guard webView === scanner, activeScanNavigation === navigation,
+              (error as NSError).code != NSURLErrorCancelled else { return }
         statusLabel.text = "Could not load that page: \(error.localizedDescription)"
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        guard (error as NSError).code != NSURLErrorCancelled else { return }
+        guard webView === scanner, activeScanNavigation === navigation,
+              (error as NSError).code != NSURLErrorCancelled else { return }
         statusLabel.text = "Could not load that page: \(error.localizedDescription)"
     }
 }

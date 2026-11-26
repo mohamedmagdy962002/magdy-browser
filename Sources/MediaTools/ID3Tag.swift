@@ -274,36 +274,50 @@ enum ID3 {
 
     private static func decode(_ data: Data, skipping skipBytes: Int = 0) -> String {
         guard let first = data.first else { return "" }
-        let payload = data.dropFirst(skipBytes + 1)
-        switch first {
-        case 0: return String(data: payload, encoding: .isoLatin1) ?? ""
-        case 1: return String(data: payload, encoding: .utf16) ?? ""
-        case 2: return String(data: payload, encoding: .utf16BigEndian) ?? ""
-        default: return String(data: payload, encoding: .utf8) ?? ""
+        return decodeText(Data(data.dropFirst(skipBytes + 1)), encoding: first)
+    }
+
+    private static func decodeText(_ data: Data, encoding: UInt8) -> String {
+        switch encoding {
+        case 0: return String(data: data, encoding: .isoLatin1) ?? ""
+        case 1: return String(data: data, encoding: .utf16) ?? ""
+        case 2: return String(data: data, encoding: .utf16BigEndian) ?? ""
+        default: return String(data: data, encoding: .utf8) ?? ""
         }
     }
 
     private static func decodeComment(_ payload: Data) -> String {
         // encoding(1) + language(3) + short description (null terminated) + text
         guard payload.count > 4 else { return "" }
-        var index = 4
-        while index < payload.count, payload[index] != 0 { index += 1 }
-        guard index < payload.count else { return "" }
-        return decode(payload, skipping: index)
+        let width = payload[0] == 1 || payload[0] == 2 ? 2 : 1
+        guard let index = terminatorIndex(in: payload, from: 4, width: width) else { return "" }
+        return decodeText(Data(payload[(index + width)...]), encoding: payload[0])
     }
 
     private static func artwork(_ payload: Data) -> (Data?, String) {
         // encoding(1) + mime (null terminated) + type(1) + description (null terminated) + image
         guard payload.count > 2 else { return (nil, "image/jpeg") }
-        var index = 1
-        while index < payload.count, payload[index] != 0 { index += 1 }
-        guard index < payload.count else { return (nil, "image/jpeg") }
+        guard let index = terminatorIndex(in: payload, from: 1, width: 1) else { return (nil, "image/jpeg") }
         let mime = String(data: payload[1..<index], encoding: .isoLatin1) ?? "image/jpeg"
-        index += 2 // mime terminator + picture type
-        while index < payload.count, payload[index] != 0 { index += 1 }
-        guard index < payload.count else { return (nil, mime) }
-        let image = Data(payload[(index + 1)...])
+        let descriptionStart = index + 2
+        guard descriptionStart <= payload.count else { return (nil, mime) }
+        let width = payload[0] == 1 || payload[0] == 2 ? 2 : 1
+        guard let terminator = terminatorIndex(in: payload, from: descriptionStart, width: width) else { return (nil, mime) }
+        let image = Data(payload[(terminator + width)...])
         return (image.isEmpty ? nil : image, mime)
+    }
+
+    private static func terminatorIndex(in payload: Data, from start: Int, width: Int) -> Int? {
+        var index = start
+        while index + width <= payload.count {
+            if width == 1 {
+                if payload[index] == 0 { return index }
+            } else if payload[index] == 0 && payload[index + 1] == 0 {
+                return index
+            }
+            index += width
+        }
+        return nil
     }
 
     private static func syncSafeBytes(_ count: Int) -> [UInt8] {
