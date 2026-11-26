@@ -222,7 +222,7 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
 
     private let store = VaultStore.shared
     private var files: [String] = []
-    private var requiresUnlockOnForeground = false
+    private var isUnlocked = false
     private var reloadGeneration = 0
 
     init() {
@@ -260,16 +260,25 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
         NotificationCenter.default.removeObserver(self)
     }
 
+    func markUnlocked() {
+        isUnlocked = true
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        reload()
+        if isUnlocked {
+            reload()
+        } else {
+            authenticateVault()
+        }
     }
 
     private func reload() {
+        guard isUnlocked else { return }
         reloadGeneration &+= 1
         let generation = reloadGeneration
         store.reload { [weak self] names in
-            guard let self, generation == self.reloadGeneration, !self.requiresUnlockOnForeground else { return }
+            guard let self, self.isUnlocked, generation == self.reloadGeneration else { return }
             self.files = names
             self.collectionView.reloadData()
         }
@@ -278,32 +287,34 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
     @objc private func protectBeforeBackground() {
         guard isViewLoaded, view.window != nil else { return }
         reloadGeneration &+= 1
-        requiresUnlockOnForeground = true
+        isUnlocked = false
         files.removeAll()
         collectionView.reloadData()
         authenticateVault()
     }
 
     @objc private func handleDidEnterBackground() {
-        if !requiresUnlockOnForeground { protectBeforeBackground() }
+        protectBeforeBackground()
     }
 
     @objc private func handleWillEnterForeground() {
-        guard requiresUnlockOnForeground else { return }
-        requiresUnlockOnForeground = false
-        guard isViewLoaded, view.window != nil else { return }
-        if AppLock.isUnlocked {
-            reload()
-        } else {
-            authenticateVault()
-        }
+        guard isViewLoaded, view.window != nil, !isUnlocked else { return }
+        authenticateVault()
     }
 
     private func authenticateVault() {
         let presenter = view.window?.rootViewController ?? navigationController ?? self
-        AppLock.gate(viewController: presenter, reason: "Unlock your Private Vault") { [weak self] in
-            self?.reload()
-        }
+        AppLock.gate(
+            viewController: presenter,
+            reason: "Unlock your Private Vault",
+            onCancelled: { [weak self] in
+                self?.navigationController?.dismiss(animated: true)
+            },
+            onUnlocked: { [weak self] in
+                self?.isUnlocked = true
+                self?.reload()
+            }
+        )
     }
 
     @objc private func importTapped() {

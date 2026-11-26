@@ -105,3 +105,43 @@ jobs:
           name: simulator-screenshots
           path: build/shots
           if-no-files-found: warn
+
+  ipad-navigation:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Select iPad Simulator
+        id: simulator
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -m1 "iPad (" | grep -Eo '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}')
+          test -n "$UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "iPad Simulator UDID: $UDID"
+
+      - name: Run regular-width navigation tests
+        run: |
+          xcodebuild test \
+            -project MagdyBrowser.xcodeproj \
+            -scheme Screenshots \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath build/IPadData \
+            -only-testing:MagdyBrowserUITests/NavigationTests \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload iPad screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipad-navigation-screenshots
+          path: build/shots
+          if-no-files-found: error

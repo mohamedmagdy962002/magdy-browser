@@ -143,8 +143,7 @@ final class FavoritesViewController: UITableViewController {
             return
         }
         guard let url = URL(string: items[indexPath.row].url) else { return }
-        NotificationCenter.default.post(name: .magdyOpenURL, object: url)
-        tabBarController?.selectedIndex = 0
+        appRouteHandler?.openWebURL(url)
     }
 
     @objc private func backToFolders() {

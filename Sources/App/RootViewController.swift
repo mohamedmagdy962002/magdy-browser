@@ -1,6 +1,11 @@
 import UIKit
 
-final class RootViewController: UITabBarController {
+final class RootViewController: UIViewController {
+    private(set) lazy var coordinator = AppCoordinator()
+    private var activeContainer: UIViewController?
+    private var compactController: UITabBarController?
+    private var splitController: UISplitViewController?
+    private var needsShellUpdate = false
     private var themeObserver: NSObjectProtocol?
     private var languageObserver: NSObjectProtocol?
 
@@ -13,11 +18,15 @@ final class RootViewController: UITabBarController {
         }
     }
 
+    func prepareForLaunch() {
+        _ = coordinator
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         overrideUserInterfaceStyle = Theme.forcedStyle
-        view.accessibilityIdentifier = "root-tabs"
-        view.semanticContentAttribute = L.isRightToLeft ? .forceRightToLeft : .forceLeftToRight
+        view.accessibilityIdentifier = "app-root"
+        updateSemanticContentAttribute()
 
         themeObserver = NotificationCenter.default.addObserver(
             forName: .magdyThemeChanged, object: nil, queue: .main
@@ -27,44 +36,116 @@ final class RootViewController: UITabBarController {
         languageObserver = NotificationCenter.default.addObserver(
             forName: .magdyLanguageChanged, object: nil, queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            self.view.semanticContentAttribute = L.isRightToLeft ? .forceRightToLeft : .forceLeftToRight
-            let keys = ["browser", "downloads", "media", "favorites", "history", "settings"]
-            for (index, controller) in (self.viewControllers ?? []).enumerated() where index < keys.count {
-                controller.tabBarItem.title = L.t(keys[index])
-            }
+            self?.updateSemanticContentAttribute()
+            self?.coordinator.refreshLocalizedTitles()
         }
 
-        let browser = UINavigationController(rootViewController: BrowserViewController())
-        browser.tabBarItem = UITabBarItem(
-            title: L.t("browser"), image: UIImage(systemName: "globe"), tag: 0
-        )
+        updateShell()
+    }
 
-        let downloads = UINavigationController(rootViewController: DownloadsViewController())
-        downloads.tabBarItem = UITabBarItem(
-            title: L.t("downloads"), image: UIImage(systemName: "arrow.down.circle"), tag: 1
-        )
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.horizontalSizeClass != traitCollection.horizontalSizeClass {
+            requestShellUpdate()
+        }
+    }
 
-        let media = UINavigationController(rootViewController: MediaToolsViewController())
-        media.tabBarItem = UITabBarItem(
-            title: L.t("media"), image: UIImage(systemName: "wand.and.stars"), tag: 2
-        )
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if needsShellUpdate, let activeContainer, !hasPresentedController(in: activeContainer) {
+            needsShellUpdate = false
+            updateShell()
+        }
+    }
 
-        let favorites = UINavigationController(rootViewController: FavoritesViewController())
-        favorites.tabBarItem = UITabBarItem(
-            title: L.t("favorites"), image: UIImage(systemName: "star"), tag: 3
-        )
+    private func requestShellUpdate() {
+        if let activeContainer, hasPresentedController(in: activeContainer) {
+            needsShellUpdate = true
+        } else {
+            updateShell()
+        }
+    }
 
-        let history = UINavigationController(rootViewController: HistoryViewController())
-        history.tabBarItem = UITabBarItem(
-            title: L.t("history"), image: UIImage(systemName: "clock.arrow.circlepath"), tag: 4
-        )
+    private func hasPresentedController(in controller: UIViewController) -> Bool {
+        if controller.presentedViewController != nil { return true }
+        return controller.children.contains(where: hasPresentedController(in:))
+    }
 
-        let settings = UINavigationController(rootViewController: SettingsViewController())
-        settings.tabBarItem = UITabBarItem(
-            title: L.t("settings"), image: UIImage(systemName: "gearshape"), tag: 5
-        )
+    private func updateSemanticContentAttribute() {
+        view.semanticContentAttribute = L.isRightToLeft ? .forceRightToLeft : .forceLeftToRight
+    }
 
-        viewControllers = [browser, downloads, media, favorites, history, settings]
+    private func updateShell() {
+        let container: UIViewController
+        if traitCollection.horizontalSizeClass == .regular {
+            if splitController == nil {
+                let split = coordinator.makeSplitController()
+                split.delegate = self
+                splitController = split
+            }
+            container = splitController!
+        } else {
+            if compactController == nil {
+                let tabs = coordinator.makeCompactController()
+                tabs.delegate = self
+                compactController = tabs
+            }
+            container = compactController!
+        }
+
+        guard container !== activeContainer else { return }
+        if let outgoing = activeContainer {
+            outgoing.willMove(toParent: nil)
+            outgoing.view.removeFromSuperview()
+            outgoing.removeFromParent()
+            coordinator.deactivate(outgoing)
+        }
+
+        addChild(container)
+        container.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(container.view)
+        NSLayoutConstraint.activate([
+            container.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            container.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            container.view.topAnchor.constraint(equalTo: view.topAnchor),
+            container.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        coordinator.activate(container)
+        container.didMove(toParent: self)
+        activeContainer = container
+    }
+}
+
+extension RootViewController: AppRouteHandler {
+    func navigate(to route: AppRoute) {
+        coordinator.navigate(to: route)
+    }
+
+    func openWebURL(_ url: URL, completion: (() -> Void)?) {
+        coordinator.openWebURL(url, completion: completion)
+    }
+
+    func downloadURL(_ url: URL, completion: (() -> Void)?) {
+        coordinator.downloadURL(url, from: view.window?.rootViewController ?? self, completion: completion)
+    }
+}
+
+extension RootViewController: UITabBarControllerDelegate {
+    func tabBarController(
+        _ tabBarController: UITabBarController,
+        didSelect viewController: UIViewController
+    ) {
+        guard let route = coordinator.primaryRoute(for: viewController as? UINavigationController) else { return }
+        coordinator.selectPrimary(route)
+    }
+}
+
+extension RootViewController: UISplitViewControllerDelegate {
+    func splitViewController(
+        _ splitViewController: UISplitViewController,
+        collapseSecondaryViewController secondaryViewController: UIViewController,
+        onto primaryViewController: UIViewController
+    ) -> Bool {
+        true
     }
 }

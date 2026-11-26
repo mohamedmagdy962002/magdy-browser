@@ -12,10 +12,10 @@ final class VideoDownloaderViewController: UITableViewController {
         configuration.websiteDataStore = dataStore
         return WKWebView(frame: .zero, configuration: configuration)
     }()
-    private var downloadObserver: NSObjectProtocol?
     private var candidates: [MediaCandidate] = []
     private var scannedURL: URL?
     private var pendingURL: URL?
+    private var pendingCompletion: (() -> Void)?
     private var scanGeneration = 0
     private weak var activeScanNavigation: WKNavigation?
 
@@ -32,16 +32,15 @@ final class VideoDownloaderViewController: UITableViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    deinit {
-        if let downloadObserver {
-            NotificationCenter.default.removeObserver(downloadObserver)
-        }
-    }
-
     /// Starts scanning a URL as soon as the view is on screen.
-    func begin(url: URL) {
+    func begin(url: URL, completion: (() -> Void)? = nil) {
         pendingURL = url
-        if isViewLoaded { start(url: url) }
+        pendingCompletion = completion
+        if isViewLoaded {
+            pendingURL = nil
+            pendingCompletion = nil
+            start(url: url, completion: completion)
+        }
     }
 
     override func viewDidLoad() {
@@ -60,14 +59,10 @@ final class VideoDownloaderViewController: UITableViewController {
         view.addSubview(scanner)
 
         if let pendingURL {
-            start(url: pendingURL)
-        }
-
-        downloadObserver = NotificationCenter.default.addObserver(
-            forName: .magdyDownloadURL, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self, let url = note.object as? URL else { return }
-            self.start(url: url)
+            self.pendingURL = nil
+            let completion = pendingCompletion
+            pendingCompletion = nil
+            start(url: pendingURL, completion: completion)
         }
     }
 
@@ -154,7 +149,7 @@ final class VideoDownloaderViewController: UITableViewController {
         start(url: url)
     }
 
-    private func start(url: URL) {
+    private func start(url: URL, completion: (() -> Void)? = nil) {
         scanGeneration &+= 1
         let generation = scanGeneration
         scannedURL = url
@@ -167,14 +162,21 @@ final class VideoDownloaderViewController: UITableViewController {
             activeScanNavigation = nil
             guard kind != .dash else {
                 statusLabel.text = "DASH manifests are not supported. Open the page and choose another source."
+                completion?()
                 return
             }
             statusLabel.text = "Starting download…"
-            scanner.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            scanner.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
                 DispatchQueue.main.async {
-                    guard let self, self.scanGeneration == generation else { return }
-                    self.download(url, kind: kind, referer: self.scannedURL, cookies: cookies)
-                    self.dismiss(animated: true)
+                    // A newer scan must not cancel a direct download awaiting its cookies.
+                    switch kind {
+                    case .hls:
+                        DownloadManager.shared.startHLS(url: url, referer: url, cookies: cookies)
+                    default:
+                        DownloadManager.shared.start(url: url, referer: url, cookies: cookies)
+                    }
+                    self?.dismiss(animated: true)
+                    completion?()
                 }
             }
             return
@@ -183,6 +185,7 @@ final class VideoDownloaderViewController: UITableViewController {
         statusLabel.text = "Loading \(url.host ?? url.absoluteString)…"
         let navigation = scanner.load(URLRequest(url: url))
         if scanGeneration == generation { activeScanNavigation = navigation }
+        completion?()
     }
 
     private func directKind(for url: URL) -> MediaCandidate.Kind? {

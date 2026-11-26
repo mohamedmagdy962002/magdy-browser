@@ -37,6 +37,7 @@ enum AppLock {
         viewController: UIViewController,
         reason: String,
         isAppLock: Bool = false,
+        onCancelled: (() -> Void)? = nil,
         onUnlocked: @escaping () -> Void
     ) {
         let presentGate = {
@@ -47,8 +48,9 @@ enum AppLock {
             // is returning from the background. Share one prompt and both handlers.
             if let locked = presenter as? LockedViewController {
                 locked.usesAppLockAuthentication = true
-                locked.allowsCancellation = !isAppLock
+                locked.allowsCancellation = locked.allowsCancellation && !isAppLock
                 locked.authenticationReason = reason
+                locked.addCancellationHandler(onCancelled)
                 locked.addUnlockHandler(onUnlocked)
                 return
             }
@@ -59,6 +61,7 @@ enum AppLock {
             locked.allowsCancellation = !isAppLock
             locked.authenticationReason = reason
             presenter.present(locked, animated: false)
+            locked.addCancellationHandler(onCancelled)
             locked.addUnlockHandler(onUnlocked)
         }
 
@@ -67,6 +70,10 @@ enum AppLock {
         } else {
             DispatchQueue.main.async(execute: presentGate)
         }
+    }
+
+    static func isLockPresented(for controller: UIViewController) -> Bool {
+        topMostController(startingAt: controller) is LockedViewController
     }
 
     fileprivate static func completeUnlock(locked: LockedViewController, completion: (() -> Void)?) {
@@ -90,6 +97,8 @@ enum AppLock {
             } else if let split = top as? UISplitViewController,
                       let detail = split.viewControllers.last, detail !== top {
                 top = detail
+            } else if let child = top.children.first(where: { $0.view.window != nil }), child !== top {
+                top = child
             } else {
                 break
             }
@@ -106,6 +115,7 @@ final class LockedViewController: UIViewController {
         didSet { cancelButton.isHidden = !allowsCancellation }
     }
     private var onUnlocked: (() -> Void)?
+    private var onCancelled: (() -> Void)?
     fileprivate var authenticationReason = "Unlock Magdy Browser"
     private var isAuthenticating = false
 
@@ -157,6 +167,15 @@ final class LockedViewController: UIViewController {
         }
     }
 
+    fileprivate func addCancellationHandler(_ handler: (() -> Void)?) {
+        guard let handler else { return }
+        if let existing = onCancelled {
+            onCancelled = { existing(); handler() }
+        } else {
+            onCancelled = handler
+        }
+    }
+
     private func beginAuthentication() {
         unlockButton.isEnabled = true
         unlockButton.setTitle("Unlock", for: .normal)
@@ -179,6 +198,7 @@ final class LockedViewController: UIViewController {
             if success {
                 let handler = self.onUnlocked
                 self.onUnlocked = nil
+                self.onCancelled = nil
                 self.retry = nil
                 if self.usesAppLockAuthentication {
                     AppLock.completeUnlock(locked: self, completion: handler)
@@ -195,8 +215,10 @@ final class LockedViewController: UIViewController {
 
     @objc private func cancelTapped() {
         guard allowsCancellation else { return }
+        let handler = onCancelled
         onUnlocked = nil
+        onCancelled = nil
         retry = nil
-        dismiss(animated: true)
+        dismiss(animated: true, completion: handler)
     }
 }

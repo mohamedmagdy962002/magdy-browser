@@ -4,11 +4,17 @@ import Foundation
 enum L {
     static let fallback: [String: String] = [
         "browser": "Browser",
+        "library": "Library",
+        "tools": "Tools",
+        "more": "More",
         "downloads": "Downloads",
         "media": "Media",
         "favorites": "Favorites",
         "settings": "Settings",
         "history": "History",
+        "your_collection": "Your collection",
+        "local_data_note": "Your library and browsing data stay on this device.",
+        "refresh": "Refresh",
         "new_tab": "New Tab",
         "private_tab": "New Private Tab",
         "search_placeholder": "Search or enter website",
@@ -42,8 +48,11 @@ enum L {
 
     private static let table: [String: [String: String]] = [
         "ar": [
-            "browser": "المتصفح", "downloads": "التنزيلات", "media": "الوسائط", "favorites": "المفضلة",
-            "settings": "الإعدادات", "history": "السجل", "new_tab": "علامة تبويب جديدة",
+            "browser": "المتصفح", "library": "المكتبة", "tools": "الأدوات", "more": "المزيد",
+            "downloads": "التنزيلات", "media": "الوسائط", "favorites": "المفضلة",
+            "settings": "الإعدادات", "history": "السجل", "your_collection": "مجموعتك",
+            "local_data_note": "تبقى مكتبتك وبيانات التصفح على هذا الجهاز.", "refresh": "تحديث",
+            "new_tab": "علامة تبويب جديدة",
             "private_tab": "علامة تبويب خاصة", "search_placeholder": "ابحث أو أدخل الموقع",
             "close_all_tabs": "إغلاق كل علامات التبويب", "add_to_favorites": "أض إلى المفضلة",
             "download_media": "تنزيل الوسائط من الصفحة", "no_media_found": "لا توجد وسائط",
@@ -57,8 +66,12 @@ enum L {
             "edit_tags": "تعديل الوسوم", "upscale": "تكبير", "start": "بدء التكبير", "language": "اللغة"
         ],
         "fr": [
-            "browser": "Navigateur", "downloads": "Téléchargements", "media": "Médias",
+            "browser": "Navigateur", "library": "Bibliothèque", "tools": "Outils", "more": "Plus",
+            "downloads": "Téléchargements", "media": "Médias",
             "favorites": "Favoris", "settings": "Réglages", "history": "Historique",
+            "your_collection": "Votre collection",
+            "local_data_note": "Votre bibliothèque et vos données de navigation restent sur cet appareil.",
+            "refresh": "Actualiser",
             "new_tab": "Nouvel onglet", "private_tab": "Nouvel onglet privé",
             "search_placeholder": "Rechercher ou saisir un site",
             "close_all_tabs": "Fermer tous les onglets", "add_to_favorites": "Ajouter aux favoris",
@@ -76,8 +89,12 @@ enum L {
             "language": "Langue"
         ],
         "es": [
-            "browser": "Navegador", "downloads": "Descargas", "media": "Multimedia",
+            "browser": "Navegador", "library": "Biblioteca", "tools": "Herramientas", "more": "Más",
+            "downloads": "Descargas", "media": "Multimedia",
             "favorites": "Favoritos", "settings": "Ajustes", "history": "Historial",
+            "your_collection": "Tu colección",
+            "local_data_note": "Tu biblioteca y tus datos de navegación permanecen en este dispositivo.",
+            "refresh": "Actualizar",
             "new_tab": "Pestaña nueva", "private_tab": "Pestaña privada",
             "search_placeholder": "Busca o escribe una dirección",
             "close_all_tabs": "Cerrar todas las pestañas", "add_to_favorites": "Añadir a favoritos",
@@ -95,8 +112,11 @@ enum L {
             "language": "Idioma"
         ],
         "de": [
-            "browser": "Browser", "downloads": "Downloads", "media": "Medien", "favorites": "Favoriten",
-            "settings": "Einstellungen", "history": "Verlauf", "new_tab": "Neuer Tab",
+            "browser": "Browser", "library": "Bibliothek", "tools": "Werkzeuge", "more": "Mehr",
+            "downloads": "Downloads", "media": "Medien", "favorites": "Favoriten",
+            "settings": "Einstellungen", "history": "Verlauf", "your_collection": "Deine Sammlung",
+            "local_data_note": "Deine Bibliothek und Browserdaten bleiben auf diesem Gerät.",
+            "refresh": "Aktualisieren", "new_tab": "Neuer Tab",
             "private_tab": "Neuer privater Tab", "search_placeholder": "Suchen oder Adresse eingeben",
             "close_all_tabs": "Alle Tabs schließen", "add_to_favorites": "Zu Favoriten hinzufügen",
             "download_media": "Medien der Seite laden", "no_media_found": "Keine Medien gefunden",
@@ -113,8 +133,11 @@ enum L {
             "language": "Sprache"
         ],
         "tr": [
-            "browser": "Tarayıcı", "downloads": "İndirilenler", "media": "Medya", "favorites": "Favoriler",
-            "settings": "Ayarlar", "history": "Geçmiş", "new_tab": "Yeni sekme",
+            "browser": "Tarayıcı", "library": "Kütüphane", "tools": "Araçlar", "more": "Daha Fazla",
+            "downloads": "İndirilenler", "media": "Medya", "favorites": "Favoriler",
+            "settings": "Ayarlar", "history": "Geçmiş", "your_collection": "Koleksiyonun",
+            "local_data_note": "Kütüphanen ve tarama verilerin bu cihazda kalır.",
+            "refresh": "Yenile", "new_tab": "Yeni sekme",
             "private_tab": "Yeni gizli sekme", "search_placeholder": "Ara veya adres gir",
             "close_all_tabs": "Tüm sekmeleri kapat", "add_to_favorites": "Favorilere ekle",
             "download_media": "Sayfadaki medyayı indir", "no_media_found": "Medya bulunamadı",

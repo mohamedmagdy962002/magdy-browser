@@ -95,7 +95,7 @@ final class SettingsViewController: UITableViewController {
         case .theme:
             cell.textLabel?.text = "Theme"
             cell.accessoryType = .disclosureIndicator
-            cell.detailTextLabel?.text = (UserDefaults.standard.string(forKey: "magdy.theme") ?? "light").capitalized
+            cell.detailTextLabel?.text = (UserDefaults.standard.string(forKey: "magdy.theme") ?? "system").capitalized
         case .textZoom:
             cell.textLabel?.text = "Text Size"
             cell.accessoryType = .disclosureIndicator
@@ -187,6 +187,7 @@ final class SettingsViewController: UITableViewController {
             let navigation = UINavigationController(rootViewController: vault)
             navigation.modalPresentationStyle = .pageSheet
             AppLock.gate(viewController: self, reason: "Unlock your Private Vault") { [weak self] in
+                vault.markUnlocked()
                 self?.present(navigation, animated: true)
             }
         case .readingList:

@@ -4,8 +4,13 @@ import UIKit
 final class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     private var lockCover: UIView?
-    private var pendingOpenURL: URL?
-    private var pendingDownloadURL: URL?
+    private var pendingIntents: [PendingIntent] = []
+    private var isDispatchingIntent = false
+
+    private enum PendingIntent {
+        case open(URL)
+        case download(URL)
+    }
 
     func application(
         _ application: UIApplication,
@@ -17,9 +22,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         ContentBlocker.shared.load()
 
         let window = UIWindow(frame: UIScreen.main.bounds)
-        window.rootViewController = RootViewController()
-        window.makeKeyAndVisible()
+        let root = RootViewController()
+        root.prepareForLaunch()
+        window.rootViewController = root
         self.window = window
+        window.makeKeyAndVisible()
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(lockRequested), name: .magdyLockRequested, object: nil
@@ -38,7 +45,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
-        guard AppLock.isEnabled, !isLockScreenPresented else { return }
+        guard AppLock.isEnabled else { return }
         lockApp()
     }
 
@@ -47,37 +54,17 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func lockApp() {
-        guard AppLock.isEnabled, let window else {
+        guard AppLock.isEnabled else {
             removeLockCover()
             return
         }
+        guard let window else { return }
         showLockCover()
-        guard let presenter = topMostViewController(from: window.rootViewController) ?? window.rootViewController else { return }
-        AppLock.gate(viewController: presenter, reason: "Unlock Magdy Browser", isAppLock: true) { [weak self] in
+        guard let root = window.rootViewController else { return }
+        AppLock.gate(viewController: root, reason: "Unlock Magdy Browser", isAppLock: true) { [weak self] in
             self?.removeLockCover()
             self?.dispatchPendingIntents()
         }
-    }
-
-    private var isLockScreenPresented: Bool {
-        guard let root = window?.rootViewController else { return false }
-        var top = root
-        while let presented = top.presentedViewController {
-            if presented is LockedViewController { return true }
-            top = presented
-        }
-        return false
-    }
-
-    private func topMostViewController(from root: UIViewController?) -> UIViewController? {
-        var top = root
-        while let presented = top?.presentedViewController {
-            top = presented
-        }
-        if let navigation = top as? UINavigationController {
-            return navigation.topViewController ?? top
-        }
-        return top
     }
 
     private func showLockCover() {
@@ -104,15 +91,32 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func dispatchPendingIntents() {
-        let download = pendingDownloadURL
-        let open = pendingOpenURL
-        pendingDownloadURL = nil
-        pendingOpenURL = nil
-        if let download {
-            NotificationCenter.default.post(name: .magdyDownloadURL, object: download)
+        guard !isDispatchingIntent else { return }
+        dispatchNextIntent()
+    }
+
+    private func dispatchNextIntent() {
+        guard !pendingIntents.isEmpty else {
+            isDispatchingIntent = false
+            return
         }
-        if let open {
-            NotificationCenter.default.post(name: .magdyOpenURL, object: open)
+        isDispatchingIntent = true
+        let intent = pendingIntents.removeFirst()
+        dispatch(intent) { [weak self] in
+            DispatchQueue.main.async {
+                self?.dispatchNextIntent()
+            }
+        }
+    }
+
+    private func dispatch(_ intent: PendingIntent, completion: @escaping () -> Void) {
+        guard let handler = window?.rootViewController as? AppRouteHandler else {
+            completion()
+            return
+        }
+        switch intent {
+        case .open(let url): handler.openWebURL(url, completion: completion)
+        case .download(let url): handler.downloadURL(url, completion: completion)
         }
     }
 
@@ -140,22 +144,16 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             return false
         }
 
+        let intent: PendingIntent = host == "download" ? .download(resolved) : .open(resolved)
         if AppLock.isEnabled && !AppLock.isUnlocked {
-            if host == "download" {
-                pendingDownloadURL = resolved
-            } else {
-                pendingOpenURL = resolved
-            }
+            pendingIntents.append(intent)
             lockApp()
             return true
         }
 
         DispatchQueue.main.async {
-            if host == "download" {
-                NotificationCenter.default.post(name: .magdyDownloadURL, object: resolved)
-            } else {
-                NotificationCenter.default.post(name: .magdyOpenURL, object: resolved)
-            }
+            self.pendingIntents.append(intent)
+            self.dispatchPendingIntents()
         }
         return true
     }
@@ -168,6 +166,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         UserDefaults.standard.set(true, forKey: UserDefaultsKey.searchSuggestions)
         UserDefaults.standard.set(false, forKey: "magdy.memorySaver")
         UserDefaults.standard.set("light", forKey: "magdy.theme")
+        UserDefaults.standard.set("en", forKey: UserDefaultsKey.language)
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         for name in ["current-wallpaper.png", "current-wallpaper.jpg"] {
             try? FileManager.default.removeItem(at: documents.appendingPathComponent(name))

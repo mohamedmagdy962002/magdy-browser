@@ -76,8 +76,7 @@ final class HistoryViewController: UITableViewController {
         tableView.deselectRow(at: indexPath, animated: true)
         let entry = entries[indexPath.row]
         guard let url = URL(string: entry.url) else { return }
-        NotificationCenter.default.post(name: .magdyOpenURL, object: url)
-        tabBarController?.selectedIndex = 0
+        appRouteHandler?.openWebURL(url)
     }
 
     override func tableView(

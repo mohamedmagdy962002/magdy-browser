@@ -9,12 +9,12 @@ final class MediaToolsViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = L.t("media")
+        title = L.t("tools")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         tableView.backgroundColor = Theme.canvas
         tableView.separatorStyle = .none
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: "Refresh", style: .plain, target: self, action: #selector(refresh)
+            title: L.t("refresh"), style: .plain, target: self, action: #selector(refresh)
         )
         buildHeader()
     }

@@ -35,8 +35,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private let forwardButton = UIButton(type: .system)
     private let downloadFAB = UIButton(type: .system)
 
-    private var openURLObserver: NSObjectProtocol?
-    private var downloadURLObserver: NSObjectProtocol?
+    private weak var sessionRestoreAlert: UIAlertController?
+    private var pendingIncomingDownloads: [(url: URL, completion: (() -> Void)?)] = []
     private var nightModeObserver: NSObjectProtocol?
     private var closedTabs: [TabGridViewController.ClosedTab] = []
     private let suggestionsTable = UITableView(frame: .zero, style: .plain)
@@ -52,20 +52,6 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         openNewTab(privateMode: UserDefaultsKey.bool(UserDefaultsKey.defaultPrivate, default: false))
         offerSessionRestore()
 
-        openURLObserver = NotificationCenter.default.addObserver(
-            forName: .magdyOpenURL, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self, let url = note.object as? URL else { return }
-            self.open(url: url, privateMode: false)
-        }
-
-        downloadURLObserver = NotificationCenter.default.addObserver(
-            forName: .magdyDownloadURL, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self, let url = note.object as? URL else { return }
-            self.handleIncomingDownload(url)
-        }
-
         nightModeObserver = NotificationCenter.default.addObserver(
             forName: .magdyNightModeChanged, object: nil, queue: .main
         ) { [weak self] note in
@@ -76,16 +62,28 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        navigationController?.setNavigationBarHidden(true, animated: animated)
+        updateNavigationChrome(animated: animated)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        drainPendingIncomingDownloads()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.horizontalSizeClass != traitCollection.horizontalSizeClass {
+            updateNavigationChrome(animated: false)
+        }
+    }
+
+    private func updateNavigationChrome(animated: Bool) {
+        let regular = traitCollection.horizontalSizeClass == .regular
+        navigationController?.setNavigationBarHidden(!regular, animated: animated)
+        navigationItem.leftBarButtonItem = regular ? navigationController?.splitViewController?.displayModeButtonItem : nil
     }
 
     deinit {
-        if let openURLObserver {
-            NotificationCenter.default.removeObserver(openURLObserver)
-        }
-        if let downloadURLObserver {
-            NotificationCenter.default.removeObserver(downloadURLObserver)
-        }
         if let nightModeObserver {
             NotificationCenter.default.removeObserver(nightModeObserver)
         }
@@ -222,6 +220,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         omnibox.translatesAutoresizingMaskIntoConstraints = false
         omnibox.accessibilityIdentifier = "browser-omnibox"
         omnibox.isAccessibilityElement = false
+        omnibox.accessibilityElements = [addressField, reloadButton]
 
         let toolbarChrome = UIView()
         // Liquid glass dock, flush with the screen edges and the tab bar below
@@ -700,26 +699,90 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     }
 
     /// Handles a URL that arrived from the share sheet or another app.
-    private func handleIncomingDownload(_ url: URL) {
+    func handleIncomingDownload(_ url: URL, completion: (() -> Void)? = nil) {
+        loadViewIfNeeded()
+        dismissSessionRestoreAlert { [weak self] in
+            guard let self else {
+                completion?()
+                return
+            }
+            self.startIncomingDownload(url, completion: completion)
+        }
+    }
+
+    private func startIncomingDownload(_ url: URL, completion: (() -> Void)? = nil) {
         let ext = url.pathExtension.lowercased()
         let direct = ["mp4", "m4v", "mov", "webm", "mkv", "mp3", "m4a", "aac", "wav", "flac", "zip", "pdf", "apk"]
 
         if ext == "m3u8" {
             activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
                 DownloadManager.shared.startHLS(url: url, referer: nil, cookies: cookies)
+                completion?()
             }
             return
         }
         if direct.contains(ext) {
             activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
                 DownloadManager.shared.start(url: url, referer: nil, cookies: cookies)
+                completion?()
             }
             return
         }
+        if AppLock.isLockPresented(for: self) {
+            AppLock.gate(
+                viewController: self,
+                reason: "Unlock Magdy Browser",
+                onCancelled: { completion?() }
+            ) { [weak self] in
+                self?.startIncomingDownload(url, completion: completion)
+            }
+            return
+        }
+
+        if let dismissal = incomingDownloadDismissal() {
+            pendingIncomingDownloads.append((url, completion))
+            dismissal.controller.transitionCoordinator?.animate(alongsideTransition: nil) { [weak self] _ in
+                self?.drainPendingIncomingDownloads()
+            }
+            return
+        }
+
+        let presenter = incomingDownloadPresenter()
+
         let controller = VideoDownloaderViewController()
         let navigation = UINavigationController(rootViewController: controller)
-        present(navigation, animated: true) {
-            controller.begin(url: url)
+        presenter.present(navigation, animated: true) {
+            controller.begin(url: url, completion: completion)
+        }
+    }
+
+    private func incomingDownloadPresenter() -> UIViewController {
+        var presenter: UIViewController = self
+        var visited = Set<ObjectIdentifier>()
+        while visited.insert(ObjectIdentifier(presenter)).inserted,
+              let presented = presenter.presentedViewController {
+            presenter = presented
+        }
+        return presenter
+    }
+
+    private func incomingDownloadDismissal() -> (presenter: UIViewController, controller: UIViewController)? {
+        var presenter: UIViewController = self
+        var visited = Set<ObjectIdentifier>()
+        while visited.insert(ObjectIdentifier(presenter)).inserted,
+              let presented = presenter.presentedViewController {
+            if presented.isBeingDismissed {
+                return (presenter, presented)
+            }
+            presenter = presented
+        }
+        return nil
+    }
+
+    private func drainPendingIncomingDownloads() {
+        while incomingDownloadDismissal() == nil, let request = pendingIncomingDownloads.first {
+            pendingIncomingDownloads.removeFirst()
+            startIncomingDownload(request.url, completion: request.completion)
         }
     }
 
@@ -822,8 +885,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
                 alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
                 self.present(alert, animated: true)
             case "downloads":
-                let downloads = UINavigationController(rootViewController: DownloadsViewController())
-                self.present(downloads, animated: true)
+                self.appRouteHandler?.navigate(to: .downloads)
             default: break
             }
         }
@@ -894,11 +956,31 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         openNewTab(privateMode: false)
     }
 
-    private func open(url: URL, privateMode: Bool) {
-        guard url.isWebURL else { return }
-        let tab = store.newTab(privateMode: privateMode)
-        activate(tab)
-        tab.load(url: url)
+    func open(url: URL, privateMode: Bool, completion: (() -> Void)? = nil) {
+        guard url.isWebURL else {
+            completion?()
+            return
+        }
+        dismissSessionRestoreAlert { [weak self] in
+            guard let self else {
+                completion?()
+                return
+            }
+            let tab = self.store.newTab(privateMode: privateMode)
+            self.activate(tab)
+            tab.load(url: url)
+            completion?()
+        }
+    }
+
+    private func dismissSessionRestoreAlert(completion: @escaping () -> Void) {
+        guard let alert = sessionRestoreAlert,
+              alert.presentingViewController != nil,
+              !alert.isBeingDismissed else {
+            completion()
+            return
+        }
+        alert.dismiss(animated: true, completion: completion)
     }
 
     // MARK: - Actions
@@ -1000,6 +1082,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         )
         alert.addAction(UIAlertAction(title: "Restore", style: .default) { [weak self] _ in
             guard let self else { return }
+            self.sessionRestoreAlert = nil
             for url in urls {
                 let tab = self.store.newTab(privateMode: false)
                 self.activate(tab)
@@ -1008,8 +1091,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             self.store.clearSavedSession()
         })
         alert.addAction(UIAlertAction(title: "New Session", style: .cancel) { [weak self] _ in
+            self?.sessionRestoreAlert = nil
             self?.store.clearSavedSession()
         })
+        sessionRestoreAlert = alert
         present(alert, animated: true)
     }
 
