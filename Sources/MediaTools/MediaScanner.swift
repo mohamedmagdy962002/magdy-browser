@@ -101,7 +101,10 @@ enum MediaScanner {
           const formats = (config.streamingData.formats || []).concat(config.streamingData.adaptiveFormats || []);
           formats.forEach((f) => {
             const url = f.url || (f.cipher ? null : null);
-            if (url) add(url, 'player', kindOf(url) || 'video');
+            if (url) {
+              const kind = kindOf(url);
+              if (kind) add(url, 'player', kind);
+            }
           });
         }
       } catch (e) { }

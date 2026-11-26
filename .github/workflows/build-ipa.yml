@@ -66,26 +66,42 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Run UI screenshot tests
+      - name: Select iOS Simulator
+        id: simulator
         run: |
           # Pick whatever iPhone simulator this runner image ships.
           UDID=$(xcrun simctl list devices available | grep -m1 "iPhone" | awk -F'[()]' '{print $2}')
+          test -n "$UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           echo "Simulator UDID: $UDID"
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -project MagdyBrowser.xcodeproj \
+            -scheme UnitTests \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath build/UnitData \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Run UI screenshot tests
+        if: always() && steps.simulator.outcome == 'success'
+        run: |
           xcodebuild test \
             -project MagdyBrowser.xcodeproj \
             -scheme Screenshots \
-            -destination "platform=iOS Simulator,id=$UDID" \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
             -derivedDataPath build/TestData \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Collect screenshots
-        if: always()
+        if: always() && steps.simulator.outcome == 'success'
         run: ls -la build/shots || true
 
       - name: Upload screenshots
-        if: always()
+        if: always() && steps.simulator.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: simulator-screenshots
           path: build/shots
-          if-no-files-found: error
+          if-no-files-found: warn

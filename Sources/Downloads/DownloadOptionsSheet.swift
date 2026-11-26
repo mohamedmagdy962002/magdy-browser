@@ -13,6 +13,7 @@ final class DownloadOptionsSheet: UIViewController {
     private let nameField = UITextField()
     private let chipsRow = UIScrollView()
     private var chips: [UIButton] = []
+    private var chipURLs: [URL?] = []
     /// nil = "Best" (highest quality).
     private var selected: URL?
     private let folderButton = UIButton(type: .system)
@@ -151,6 +152,7 @@ final class DownloadOptionsSheet: UIViewController {
     private func addChips(_ options: [(String, URL?)]) {
         for chip in chips { chip.removeFromSuperview() }
         chips.removeAll()
+        chipURLs = options.map { $0.1 }
         var previous: UIButton?
         for (index, option) in options.enumerated() {
             let chip = UIButton(type: .system)
@@ -160,7 +162,6 @@ final class DownloadOptionsSheet: UIViewController {
             chip.layer.borderWidth = 1
             chip.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
             chip.tag = index
-            chip.accessibilityValue = option.1?.absoluteString ?? ""
             chip.addTarget(self, action: #selector(chipTapped(_:)), for: .touchUpInside)
             chipsRow.addSubview(chip)
             chip.translatesAutoresizingMaskIntoConstraints = false
@@ -185,7 +186,7 @@ final class DownloadOptionsSheet: UIViewController {
     }
 
     private func select(_ chip: UIButton) {
-        selected = URL(string: chip.accessibilityValue ?? "")
+        selected = chipURLs[chip.tag]
         for other in chips {
             other.backgroundColor = Theme.card
             other.setTitleColor(Theme.textPrimary, for: .normal)

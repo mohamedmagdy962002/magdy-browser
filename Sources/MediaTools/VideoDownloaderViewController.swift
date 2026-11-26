@@ -10,6 +10,12 @@ final class VideoDownloaderViewController: UITableViewController {
     private var candidates: [MediaCandidate] = []
     private var scannedURL: URL?
     private var pendingURL: URL?
+    private var scanGeneration = 0
+
+    private static let directExtensions: Set<String> = [
+        "m3u8", "mpd", "mp4", "m4v", "mov", "webm", "mkv", "avi",
+        "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "zip", "pdf", "apk", "epub"
+    ]
 
     /// Starts scanning a URL as soon as the view is on screen.
     func begin(url: URL) {
@@ -128,11 +134,55 @@ final class VideoDownloaderViewController: UITableViewController {
     }
 
     private func start(url: URL) {
+        scanGeneration &+= 1
+        let generation = scanGeneration
         scannedURL = url
         candidates = []
         tableView.reloadData()
+        urlField.text = url.absoluteString
+
+        if let kind = directKind(for: url) {
+            scanner.stopLoading()
+            guard kind != .dash else {
+                statusLabel.text = "DASH manifests are not supported. Open the page and choose another source."
+                return
+            }
+            statusLabel.text = "Starting download…"
+            scanner.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+                DispatchQueue.main.async {
+                    guard let self, self.scanGeneration == generation else { return }
+                    self.download(url, kind: kind, referer: self.scannedURL, cookies: cookies)
+                    self.dismiss(animated: true)
+                }
+            }
+            return
+        }
+
         statusLabel.text = "Loading \(url.host ?? url.absoluteString)…"
         scanner.load(URLRequest(url: url))
+    }
+
+    private func directKind(for url: URL) -> MediaCandidate.Kind? {
+        let ext = url.pathExtension.lowercased()
+        guard Self.directExtensions.contains(ext) else { return nil }
+        switch ext {
+        case "m3u8": return .hls
+        case "mpd": return .dash
+        case "mp4", "m4v", "mov", "webm", "mkv", "avi": return .video
+        case "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus": return .audio
+        default: return .file
+        }
+    }
+
+    private func download(_ url: URL, kind: MediaCandidate.Kind, referer: URL?, cookies: [HTTPCookie]) {
+        switch kind {
+        case .hls:
+            DownloadManager.shared.startHLS(url: url, referer: referer, cookies: cookies)
+        case .dash:
+            statusLabel.text = "DASH manifests are not supported."
+        default:
+            DownloadManager.shared.start(url: url, referer: referer, cookies: cookies)
+        }
     }
 
     // MARK: - Table
@@ -163,24 +213,17 @@ final class VideoDownloaderViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let candidate = candidates[indexPath.row]
-
+        guard candidate.kind != .dash else {
+            statusLabel.text = "DASH manifests are not supported. Choose another source."
+            return
+        }
+        let generation = scanGeneration
         scanner.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            guard let self else { return }
-            switch candidate.kind {
-            case .hls:
-                DownloadManager.shared.startHLS(
-                    url: candidate.url,
-                    referer: self.scannedURL,
-                    cookies: cookies
-                )
-            default:
-                DownloadManager.shared.start(
-                    url: candidate.url,
-                    referer: self.scannedURL,
-                    cookies: cookies
-                )
+            DispatchQueue.main.async {
+                guard let self, self.scanGeneration == generation else { return }
+                self.download(candidate.url, kind: candidate.kind, referer: self.scannedURL, cookies: cookies)
+                self.dismiss(animated: true)
             }
-            self.dismiss(animated: true)
         }
     }
 
@@ -193,11 +236,27 @@ final class VideoDownloaderViewController: UITableViewController {
 // MARK: - Scanning
 
 extension VideoDownloaderViewController: WKNavigationDelegate {
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        if navigationAction.targetFrame?.isMainFrame != false,
+           let url = navigationAction.request.url,
+           let kind = directKind(for: url) {
+            decisionHandler(.cancel)
+            start(url: url)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         statusLabel.text = "Scanning…"
+        let generation = scanGeneration
         MediaScanner.scan(webView: webView) { [weak self] candidates in
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, self.scanGeneration == generation else { return }
                 self.candidates = candidates
                 self.tableView.reloadData()
                 self.statusLabel.text = candidates.isEmpty
@@ -208,6 +267,12 @@ extension VideoDownloaderViewController: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard (error as NSError).code != NSURLErrorCancelled else { return }
+        statusLabel.text = "Could not load that page: \(error.localizedDescription)"
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard (error as NSError).code != NSURLErrorCancelled else { return }
         statusLabel.text = "Could not load that page: \(error.localizedDescription)"
     }
 }

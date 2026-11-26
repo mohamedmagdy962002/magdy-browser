@@ -19,8 +19,76 @@ final class DownloadItem {
     var cancel: (() -> Void)?
     var task: URLSessionDownloadTask?
     var resumeData: Data?
+    var hasReservedDestination = false
     /// Bytes already on disk before the current resume session (for correct totals).
     var resumeBaseBytes: Int64 = 0
+    var generation: UInt64 = 0
+    var isPausing = false
+}
+
+enum DownloadError: LocalizedError {
+    case invalidFileName(String)
+    case missingFile(String)
+    case deliveryFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidFileName(let name): return "Invalid download name: \(name)"
+        case .missingFile(let name): return "The downloaded file \(name) is missing."
+        case .deliveryFailed(let message): return "Could not save the download: \(message)"
+        }
+    }
+}
+
+enum DownloadDestinationAllocator {
+    private static let lock = NSLock()
+    private static var reserved: Set<String> = []
+
+    static func availableName(_ proposed: String, in folder: URL, reserve: Bool) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+
+        var candidate = proposed
+        var counter = 1
+        while FileManager.default.fileExists(atPath: folder.appendingPathComponent(candidate).path)
+                || reserved.contains(reservationKey(folder.appendingPathComponent(candidate))) {
+            let ext = (proposed as NSString).pathExtension
+            let base = (proposed as NSString).deletingPathExtension
+            let suffix = ext.isEmpty ? " (\(counter))" : " (\(counter)).\(ext)"
+            if suffix.utf8.count >= 255 {
+                candidate = "download-\(counter)"
+            } else {
+                let shortenedBase = prefixFitting(base, maxBytes: 255 - suffix.utf8.count)
+                candidate = shortenedBase + suffix
+            }
+            counter += 1
+        }
+        if reserve {
+            reserved.insert(reservationKey(folder.appendingPathComponent(candidate)))
+        }
+        return candidate
+    }
+
+    static func release(_ destination: URL) {
+        lock.lock()
+        reserved.remove(reservationKey(destination))
+        lock.unlock()
+    }
+
+    private static func reservationKey(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
+    private static func prefixFitting(_ value: String, maxBytes: Int) -> String {
+        guard maxBytes > 0 else { return "" }
+        var result = ""
+        for character in value {
+            let next = result.appending(character)
+            if next.utf8.count > maxBytes { break }
+            result = next
+        }
+        return result
+    }
 }
 
 /// Unlimited download queue: no count cap, no speed cap, no subscription gate.
@@ -32,11 +100,12 @@ final class DownloadManager: NSObject {
 
     private var downloadItems: [ObjectIdentifier: DownloadItem] = [:]
     private var pendingSourceURL: [ObjectIdentifier: URL] = [:]
+    private var scopedDownloadFolders: [ObjectIdentifier: URL] = [:]
     private var taskItems: [Int: DownloadItem] = [:]
     private var hlsItems: [UUID: DownloadItem] = [:]
     private var timers: [UUID: Timer] = [:]
 
-    private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: OperationQueue.main)
 
     /// Security-scoped bookmark of the user-chosen download folder (nil = app Downloads).
     static let folderBookmarkKey = "magdy.downloadFolderBookmark"
@@ -52,7 +121,8 @@ final class DownloadManager: NSObject {
 
     /// The folder new files land in: the user's chosen folder when reachable, else Downloads.
     func folderDisplayName() -> String {
-        guard resolveCustomFolder() != nil else { return "Magdy Downloads" }
+        guard let folder = resolveCustomFolder() else { return "Magdy Downloads" }
+        defer { folder.stopAccessingSecurityScopedResource() }
         return customFolderName ?? "Magdy Downloads"
     }
 
@@ -64,32 +134,64 @@ final class DownloadManager: NSObject {
     private func resolveCustomFolder() -> URL? {
         guard let data = UserDefaults.standard.data(forKey: Self.folderBookmarkKey) else { return nil }
         var stale = false
-        guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else {
+        guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale),
+              url.startAccessingSecurityScopedResource() else {
             return nil
         }
-        url.startAccessingSecurityScopedResource()
         return url
     }
 
+    private func downloadDirectory() throws -> URL {
+        let folder = directory
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory) {
+            guard isDirectory.boolValue else { throw DownloadError.deliveryFailed("Downloads is not a folder.") }
+        } else {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        return folder
+    }
+
+    private func withDeliveryFolder<T>(_ body: (URL) throws -> T) throws -> T {
+        if let folder = resolveCustomFolder() {
+            defer { folder.stopAccessingSecurityScopedResource() }
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                return try body(folder)
+            }
+        }
+        return try body(try downloadDirectory())
+    }
+
+    private func removeDeliveredFile(_ url: URL) {
+        if let folder = resolveCustomFolder() {
+            defer { folder.stopAccessingSecurityScopedResource() }
+            try? FileManager.default.removeItem(at: url)
+        } else {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     /// Moves a finished temp file to the chosen folder (or Downloads) with a unique name.
-    private func deliver(_ temp: URL, name: String) -> URL {
-        let fallback = directory.appendingPathComponent(uniqueName(name))
-        guard let folder = resolveCustomFolder() else {
-            return fallback
-        }
-        defer { folder.stopAccessingSecurityScopedResource() }
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDir), isDir.boolValue else {
-            return fallback
-        }
-        let target = folder.appendingPathComponent(uniqueName(name))
-        try? FileManager.default.removeItem(at: target)
-        do {
-            try FileManager.default.moveItem(at: temp, to: target)
-            return target
-        } catch {
-            try? FileManager.default.moveItem(at: temp, to: fallback)
-            return fallback
+    private func deliver(_ temp: URL, name: String) throws -> URL {
+        try withDeliveryFolder { folder in
+            let target = try reserveDestination(name: name, in: folder)
+            defer { releaseDestination(target) }
+
+            var moved = false
+            do {
+                try FileManager.default.moveItem(at: temp, to: target)
+                moved = true
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+                    throw DownloadError.missingFile(target.lastPathComponent)
+                }
+                return target
+            } catch {
+                if moved { try? FileManager.default.removeItem(at: target) }
+                if error is DownloadError { throw error }
+                throw DownloadError.deliveryFailed(error.localizedDescription)
+            }
         }
     }
 
@@ -118,9 +220,20 @@ final class DownloadManager: NSObject {
             request.setValue(header, forHTTPHeaderField: "Cookie")
         }
 
+        let proposed = fileName.flatMap { $0.isEmpty ? nil : $0 }
+            ?? (url.lastPathComponent.isEmpty ? "download" : url.lastPathComponent)
         let item = DownloadItem()
-        item.fileName = uniqueName(fileName?.isEmpty == false ? fileName! : (url.lastPathComponent.isEmpty ? "download" : url.lastPathComponent))
         item.sourceURL = url
+        item.generation = 1
+        do {
+            item.fileName = try withDeliveryFolder { try uniqueName(proposed, in: $0) }
+        } catch {
+            item.fileName = proposed
+            item.state = .failed
+            item.errorMessage = error.localizedDescription
+            insert(item)
+            return
+        }
         item.state = .running
 
         let task = session.downloadTask(with: request)
@@ -133,14 +246,25 @@ final class DownloadManager: NSObject {
 
     /// HLS playlist download: all segments are fetched, merged and remuxed to .mp4.
     func startHLS(url: URL, referer: URL?, cookies: [HTTPCookie], fileName: String? = nil) {
+        let proposed = fileName.flatMap { $0.isEmpty ? nil : $0 }
+            ?? (url.deletingPathExtension().lastPathComponent + ".mp4")
         let item = DownloadItem()
-        item.fileName = uniqueName(fileName?.isEmpty == false ? fileName! : (url.deletingPathExtension().lastPathComponent + ".mp4"))
         item.sourceURL = url
+        item.generation = 1
+        do {
+            item.fileName = try withDeliveryFolder { try uniqueName(proposed, in: $0) }
+        } catch {
+            item.fileName = proposed
+            item.state = .failed
+            item.errorMessage = error.localizedDescription
+            insert(item)
+            return
+        }
         item.state = .running
         hlsItems[item.id] = item
         insert(item)
 
-        HLSDownloader.download(
+        let request = HLSDownloader.startDownload(
             playlist: url,
             cookies: cookies,
             progress: { [weak self] value in
@@ -149,52 +273,106 @@ final class DownloadManager: NSObject {
             },
             completion: { [weak self] result in
                 guard let self else { return }
+                self.hlsItems.removeValue(forKey: item.id)
+                guard item.state == .running else {
+                    if case .success(let fileURL) = result { try? FileManager.default.removeItem(at: fileURL) }
+                    self.notify()
+                    return
+                }
                 switch result {
                 case .success(let fileURL):
-                    let base = (item.fileName as NSString).pathExtension.isEmpty
-                        ? item.fileName + ".mp4" : item.fileName
-                    let destination = self.deliver(fileURL, name: base)
-                    item.localURL = destination
-                    item.fileName = destination.lastPathComponent
-                    item.state = .finished
-                    item.progress = 1
+                    let base = (item.fileName as NSString).deletingPathExtension
+                    let fileExtension = fileURL.pathExtension.lowercased() == "ts" ? "ts" : "mp4"
+                    do {
+                        let destination = try self.deliver(fileURL, name: base + "." + fileExtension)
+                        item.localURL = destination
+                        item.fileName = destination.lastPathComponent
+                        item.state = .finished
+                        item.progress = 1
+                    } catch {
+                        try? FileManager.default.removeItem(at: fileURL)
+                        item.state = .failed
+                        item.errorMessage = error.localizedDescription
+                    }
                 case .failure(let error):
-                    item.state = .failed
-                    item.errorMessage = error.localizedDescription
+                    if let hlsError = error as? HLSError, case .cancelled = hlsError {
+                        item.state = .cancelled
+                    } else {
+                        item.state = .failed
+                        item.errorMessage = error.localizedDescription
+                    }
                 }
-                self.hlsItems.removeValue(forKey: item.id)
+                item.cancel = nil
                 self.notify()
             }
         )
+        item.cancel = { request.cancel() }
     }
 
     func cancel(_ item: DownloadItem) {
-        item.cancel?()
-        item.cancel = nil
+        guard item.state != .finished, item.state != .cancelled else { return }
         item.state = .cancelled
+        item.errorMessage = nil
+        item.generation &+= 1
+        item.isPausing = false
+        item.resumeData = nil
+
+        if hlsItems.removeValue(forKey: item.id) != nil {
+            let cancel = item.cancel
+            item.cancel = nil
+            cancel?()
+        } else if let task = item.task {
+            taskItems.removeValue(forKey: task.taskIdentifier)
+            item.task = nil
+            item.cancel = nil
+            task.cancel()
+        } else {
+            item.cancel?()
+            item.cancel = nil
+        }
         stopPolling(item)
         notify()
     }
 
     /// Pauses a direct download, keeping resume data for `resume(item:)`.
     func pause(_ item: DownloadItem) {
-        guard let task = item.task, item.state == .running else { return }
+        guard let task = item.task, item.state == .running, !item.isPausing else { return }
+        item.generation &+= 1
+        let generation = item.generation
+        let taskIdentifier = task.taskIdentifier
         item.resumeData = nil
+        item.isPausing = true
         // Base offset so progress after resume counts the bytes already saved.
         item.resumeBaseBytes = item.bytesWritten
         task.cancel(byProducingResumeData: { [weak self, weak item] data in
-            guard let self, let item else { return }
-            item.resumeData = data
-            item.state = .paused
-            self.stopPolling(item)
+            guard let self, let item, item.generation == generation, item.isPausing else { return }
+            item.isPausing = false
+            item.task = nil
+            item.cancel = nil
+            self.taskItems.removeValue(forKey: taskIdentifier)
+            if let data {
+                item.resumeData = data
+                item.state = .paused
+                item.errorMessage = nil
+            } else {
+                item.state = .failed
+                item.errorMessage = "Pause did not produce resume data."
+            }
             self.notify()
         })
     }
 
     /// Resumes a paused download from its stored resume data.
     func resume(_ item: DownloadItem) {
-        guard let data = item.resumeData, item.state == .paused || item.state == .failed || item.state == .cancelled else { return }
+        guard let data = item.resumeData,
+              item.task == nil,
+              !item.isPausing,
+              item.state == .paused || item.state == .failed || item.state == .cancelled else { return }
+        item.generation &+= 1
         item.resumeData = nil
+        item.resumeBaseBytes = item.bytesWritten
+        item.errorMessage = nil
+        item.localURL = nil
         item.state = .running
         let task = session.downloadTask(withResumeData: data)
         taskItems[task.taskIdentifier] = item
@@ -206,8 +384,13 @@ final class DownloadManager: NSObject {
 
     func remove(_ item: DownloadItem) {
         cancel(item)
+        if let task = item.task {
+            taskItems.removeValue(forKey: task.taskIdentifier)
+            item.task = nil
+        }
+        hlsItems.removeValue(forKey: item.id)
         if let localURL = item.localURL {
-            try? FileManager.default.removeItem(at: localURL)
+            removeDeliveredFile(localURL)
         }
         items.removeAll { $0 === item }
         notify()
@@ -215,7 +398,12 @@ final class DownloadManager: NSObject {
 
     func clearFinished() {
         for item in items where item.state == .finished || item.state == .failed || item.state == .cancelled {
-            if let localURL = item.localURL { try? FileManager.default.removeItem(at: localURL) }
+            if let task = item.task {
+                taskItems.removeValue(forKey: task.taskIdentifier)
+                item.task = nil
+            }
+            hlsItems.removeValue(forKey: item.id)
+            if let localURL = item.localURL { removeDeliveredFile(localURL) }
         }
         items.removeAll { $0.state == .finished || $0.state == .failed || $0.state == .cancelled }
         notify()
@@ -235,21 +423,51 @@ final class DownloadManager: NSObject {
         }
     }
 
-    private func uniqueName(_ proposed: String) -> String {
+    private func sanitizedName(_ proposed: String) throws -> String {
+        guard !proposed.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+            throw DownloadError.invalidFileName(proposed)
+        }
         let cleaned = proposed
             .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "\\", with: "_")
             .replacingOccurrences(of: ":", with: "_")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = cleaned.isEmpty ? "download" : cleaned
-        var candidate = name
-        var counter = 1
-        while FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) {
-            let ext = (name as NSString).pathExtension
-            let base = (name as NSString).deletingPathExtension
-            candidate = ext.isEmpty ? "\(base) (\(counter))" : "\(base) (\(counter)).\(ext)"
-            counter += 1
+        guard !cleaned.isEmpty, cleaned != ".", cleaned != "..", cleaned.utf8.count <= 255 else {
+            throw DownloadError.invalidFileName(proposed)
         }
-        return candidate
+        return cleaned
+    }
+
+    private func uniqueName(_ proposed: String, in folder: URL) throws -> String {
+        try availableName(proposed, in: folder, reserve: false)
+    }
+
+    private func reserveDestination(name: String, in folder: URL) throws -> URL {
+        folder.appendingPathComponent(try availableName(name, in: folder, reserve: true))
+    }
+
+    private func availableName(_ proposed: String, in folder: URL, reserve: Bool) throws -> String {
+        DownloadDestinationAllocator.availableName(try sanitizedName(proposed), in: folder, reserve: reserve)
+    }
+
+    private func releaseDestination(_ destination: URL) {
+        DownloadDestinationAllocator.release(destination)
+    }
+
+    private func httpStatusError(_ response: URLResponse?) -> Error? {
+        guard let response = response as? HTTPURLResponse, !(200..<300).contains(response.statusCode) else { return nil }
+        return NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorBadServerResponse,
+            userInfo: [NSLocalizedDescriptionKey: "The server returned HTTP \(response.statusCode)."]
+        )
+    }
+
+    private func markFailed(_ item: DownloadItem, error: Error) {
+        guard item.state != .cancelled else { return }
+        item.state = .failed
+        item.errorMessage = error.localizedDescription
+        item.cancel = nil
     }
 
     private func startPolling(_ item: DownloadItem) {
@@ -285,40 +503,99 @@ extension DownloadManager: WKDownloadDelegate {
     ) {
         let key = ObjectIdentifier(download)
         let item = DownloadItem()
-        item.fileName = uniqueName(suggestedFilename)
+        item.fileName = suggestedFilename
         item.sourceURL = pendingSourceURL[key]
         item.totalBytes = response.expectedContentLength
-        item.state = .running
-
-        let destination = directory.appendingPathComponent(item.fileName)
-        item.localURL = destination
-        downloadItems[key] = item
-        pendingSourceURL.removeValue(forKey: key)
-        item.cancel = { download.cancel { _ in } }
-
-        insert(item)
-        completionHandler(destination)
-        startPolling(item)
+        var scopedFolder: URL?
+        do {
+            let folder: URL
+            if let custom = resolveCustomFolder() {
+                var isDirectory: ObjCBool = false
+                if FileManager.default.fileExists(atPath: custom.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                    folder = custom
+                    scopedFolder = custom
+                } else {
+                    custom.stopAccessingSecurityScopedResource()
+                    folder = try downloadDirectory()
+                }
+            } else {
+                folder = try downloadDirectory()
+            }
+            item.fileName = try availableName(suggestedFilename, in: folder, reserve: true)
+            let destination = folder.appendingPathComponent(item.fileName)
+            item.localURL = destination
+            item.hasReservedDestination = true
+            item.state = .running
+            downloadItems[key] = item
+            pendingSourceURL.removeValue(forKey: key)
+            if let scopedFolder {
+                scopedDownloadFolders[key] = scopedFolder
+            }
+            item.cancel = { [weak self] in
+                download.cancel { [weak self] _ in
+                    self?.completeWebKitDownload(download, error: nil)
+                }
+            }
+            insert(item)
+            completionHandler(destination)
+            startPolling(item)
+        } catch {
+            scopedFolder?.stopAccessingSecurityScopedResource()
+            item.state = .failed
+            item.errorMessage = error.localizedDescription
+            downloadItems.removeValue(forKey: key)
+            pendingSourceURL.removeValue(forKey: key)
+            insert(item)
+            completionHandler(nil)
+        }
     }
 
     func downloadDidFinish(_ download: WKDownload) {
-        let key = ObjectIdentifier(download)
-        if let item = downloadItems.removeValue(forKey: key) {
-            item.state = .finished
-            item.progress = 1
-            stopPolling(item)
-        }
-        notify()
+        completeWebKitDownload(download, error: nil)
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        completeWebKitDownload(download, error: error)
+    }
+
+    private func completeWebKitDownload(_ download: WKDownload, error: Error?) {
         let key = ObjectIdentifier(download)
-        if let item = downloadItems.removeValue(forKey: key) {
-            item.state = .failed
-            item.errorMessage = error.localizedDescription
-            stopPolling(item)
+        let scopedFolder = scopedDownloadFolders.removeValue(forKey: key)
+        pendingSourceURL.removeValue(forKey: key)
+        guard let item = downloadItems.removeValue(forKey: key) else {
+            scopedFolder?.stopAccessingSecurityScopedResource()
+            return
         }
-        notify()
+        let destination = item.localURL
+        defer {
+            if let destination, item.hasReservedDestination {
+                releaseDestination(destination)
+                item.hasReservedDestination = false
+            }
+            scopedFolder?.stopAccessingSecurityScopedResource()
+            item.cancel = nil
+            stopPolling(item)
+            notify()
+        }
+
+        var isDirectory: ObjCBool = false
+        let hasFile = destination.map {
+            FileManager.default.fileExists(atPath: $0.path, isDirectory: &isDirectory) && !isDirectory.boolValue
+        } ?? false
+        if item.state != .cancelled, error == nil, hasFile {
+            item.state = .finished
+            item.progress = 1
+        } else {
+            if let destination {
+                try? FileManager.default.removeItem(at: destination)
+                item.localURL = nil
+            }
+            if item.state != .cancelled {
+                item.state = .failed
+                item.errorMessage = error?.localizedDescription
+                    ?? DownloadError.missingFile(item.fileName).localizedDescription
+            }
+        }
     }
 }
 
@@ -336,10 +613,19 @@ extension DownloadManager: URLSessionDownloadDelegate {
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        guard let item = taskItems[downloadTask.taskIdentifier] else { return }
+        guard let item = taskItems[downloadTask.taskIdentifier],
+              item.task === downloadTask,
+              item.state == .running,
+              !item.isPausing else { return }
+        if let error = httpStatusError(downloadTask.response) {
+            markFailed(item, error: error)
+            downloadTask.cancel()
+            notify()
+            return
+        }
         let base = item.resumeBaseBytes
         item.bytesWritten = base + totalBytesWritten
-        item.totalBytes = base + totalBytesExpectedToWrite
+        item.totalBytes = totalBytesExpectedToWrite >= 0 ? base + totalBytesExpectedToWrite : 0
         if item.totalBytes > 0 {
             item.progress = min(1, Double(item.bytesWritten) / Double(item.totalBytes))
         }
@@ -351,33 +637,57 @@ extension DownloadManager: URLSessionDownloadDelegate {
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        guard let item = taskItems[downloadTask.taskIdentifier] else { return }
+        guard let item = taskItems[downloadTask.taskIdentifier],
+              item.task === downloadTask,
+              item.state == .running,
+              !item.isPausing else { return }
         taskItems.removeValue(forKey: downloadTask.taskIdentifier)
-        // Resolve the name now — two concurrent same-name downloads would
-        // otherwise both be told the same destination.
-        let destination = deliver(location, name: item.fileName)
-        item.localURL = destination
-        item.fileName = destination.lastPathComponent
-        item.state = .finished
-        item.progress = 1
+        item.task = nil
+        item.cancel = nil
+        if let error = httpStatusError(downloadTask.response) {
+            markFailed(item, error: error)
+        } else {
+            do {
+                let destination = try deliver(location, name: item.fileName)
+                item.localURL = destination
+                item.fileName = destination.lastPathComponent
+                item.state = .finished
+                item.progress = 1
+                item.bytesWritten = (try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64) ?? item.bytesWritten
+            } catch {
+                markFailed(item, error: error)
+            }
+        }
         notify()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        defer { taskItems.removeValue(forKey: task.taskIdentifier) }
-        guard let error, let item = taskItems[task.taskIdentifier] else { return }
-        if (error as NSError).code == NSURLErrorCancelled {
-            // Pause keeps the resume data so the download can continue later.
-            if item.resumeData != nil {
-                item.state = .paused
-            } else {
+        guard let item = taskItems.removeValue(forKey: task.taskIdentifier),
+              let downloadTask = item.task,
+              downloadTask === task else { return }
+        item.task = nil
+        item.cancel = nil
+        defer { notify() }
+
+        if item.isPausing {
+            if let error, (error as NSError).code != NSURLErrorCancelled {
+                item.isPausing = false
+                markFailed(item, error: error)
+            }
+            return
+        }
+        guard item.state == .running else { return }
+        if let error {
+            if (error as NSError).code == NSURLErrorCancelled {
                 item.state = .cancelled
                 item.errorMessage = error.localizedDescription
+            } else {
+                markFailed(item, error: error)
             }
+        } else if let statusError = httpStatusError(task.response) {
+            markFailed(item, error: statusError)
         } else {
-            item.state = .failed
-            item.errorMessage = error.localizedDescription
+            markFailed(item, error: DownloadError.missingFile(item.fileName))
         }
-        notify()
     }
 }

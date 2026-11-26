@@ -66,14 +66,12 @@ final class VideoActionSheet: UIViewController {
         }
         row("Download video", symbol: "arrow.down.circle") { [weak self] in
             guard let self else { return }
-            // Capture the presenter BEFORE dismissing — after dismiss it's nil
-            // and presenting from a detached VC silently fails.
-            let base = self.presentingViewController
+            let presenter = VideoActionSheet.presenter(from: self.presentingViewController)
             self.dismiss(animated: true) {
-                guard let base = base ?? VideoActionSheet.rootPresenter() else { return }
+                guard let presenter else { return }
                 DownloadOptionsSheet.present(
                     url: self.url, referer: nil, cookies: self.cookies,
-                    presenter: base
+                    presenter: presenter
                 )
             }
         }
@@ -82,10 +80,16 @@ final class VideoActionSheet: UIViewController {
         }
         row("Share link", symbol: "square.and.arrow.up") { [weak self] in
             guard let self else { return }
-            let base = self.presentingViewController
+            guard let presenter = VideoActionSheet.presenter(from: self.presentingViewController) else { return }
+            let sourceView = presenter.view
+            let sourceRect = CGRect(
+                x: sourceView.bounds.midX, y: sourceView.bounds.midY, width: 1, height: 1
+            )
             self.dismiss(animated: true) {
                 let sheet = UIActivityViewController(activityItems: [self.url.absoluteString], applicationActivities: nil)
-                (base ?? VideoActionSheet.rootPresenter())?.present(sheet, animated: true)
+                sheet.popoverPresentationController?.sourceView = sourceView
+                sheet.popoverPresentationController?.sourceRect = sourceRect
+                presenter.present(sheet, animated: true)
             }
         }
 
@@ -121,6 +125,22 @@ final class VideoActionSheet: UIViewController {
 
     @objc private func rowTapped(_ sender: UIButton) {
         sender.runAction?()
+    }
+
+    private static func presenter(from container: UIViewController?) -> UIViewController? {
+        var presenter: UIViewController?
+        if let navigationController = container as? UINavigationController,
+           let navigationPresenter = navigationController.presentingViewController {
+            presenter = navigationPresenter
+        } else {
+            presenter = container ?? rootPresenter()
+        }
+        var visited = Set<ObjectIdentifier>()
+        while let current = presenter, visited.insert(ObjectIdentifier(current)).inserted,
+              let presented = current.presentedViewController, !presented.isBeingDismissed {
+            presenter = presented
+        }
+        return presenter
     }
 
     /// Last-resort presenter when the sheet's presenting chain is gone.

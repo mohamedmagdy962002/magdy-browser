@@ -8,6 +8,7 @@ enum ReaderMode {
     struct Article {
         let title: String
         let paragraphs: [String]
+        var url: String? = nil
     }
 
     enum ReaderError: LocalizedError {
@@ -36,7 +37,7 @@ enum ReaderMode {
         if (score > bestScore) { bestScore = score; best = block; }
       }
       const root = best || document.body;
-      if (!root) return JSON.stringify({ title: document.title, paragraphs: [] });
+      if (!root) return JSON.stringify({ title: document.title, paragraphs: [], url: location.href });
 
       const seen = new Set();
       const paragraphs = [];
@@ -48,7 +49,7 @@ enum ReaderMode {
         seen.add(key);
         paragraphs.push(text);
       });
-      return JSON.stringify({ title: (document.title || '').trim(), paragraphs: paragraphs });
+      return JSON.stringify({ title: (document.title || '').trim(), paragraphs: paragraphs, url: location.href });
     })();
     """
 
@@ -65,13 +66,14 @@ enum ReaderMode {
                 completion(.failure(ReaderError.nothingFound))
                 return
             }
-            completion(.success(Article(title: decoded.title, paragraphs: decoded.paragraphs)))
+            completion(.success(Article(title: decoded.title, paragraphs: decoded.paragraphs, url: decoded.url)))
         }
     }
 
     private struct Payload: Decodable {
         let title: String
         let paragraphs: [String]
+        let url: String?
     }
 }
 
@@ -80,8 +82,10 @@ final class ReaderViewController: UIViewController {
     private let article: ReaderMode.Article
     private let textView = UITextView()
     private let synthesizer = AVSpeechSynthesizer()
+    private let speakButton = UIButton(type: .system)
+    private let swipeDismissGesture = UIScreenEdgePanGestureRecognizer()
     private var isSpeaking = false
-    private var speakButton = UIBarButtonItem(image: UIImage(systemName: "speaker.wave.2"), style: .plain, target: nil, action: nil)
+    private var ownsAudioSession = false
 
     init(article: ReaderMode.Article) {
         self.article = article
@@ -94,16 +98,39 @@ final class ReaderViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        let speak = UIBarButtonItem(
-            image: UIImage(systemName: "speaker.wave.2"), style: .plain, target: self, action: #selector(toggleSpeaking)
-        )
-        speakButton = speak
-        let save = UIBarButtonItem(
-            image: UIImage(systemName: "book"), style: .plain, target: self, action: #selector(saveToReadingList)
-        )
+
+        speakButton.setImage(UIImage(systemName: "speaker.wave.2"), for: .normal)
+        speakButton.tintColor = .label
+        speakButton.accessibilityLabel = "Read article aloud"
+        speakButton.accessibilityHint = "Starts read-aloud"
+        speakButton.addTarget(self, action: #selector(toggleSpeaking), for: .touchUpInside)
+        speakButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let saveButton = UIButton(type: .system)
+        saveButton.setImage(UIImage(systemName: "book"), for: .normal)
+        saveButton.tintColor = .label
+        saveButton.accessibilityLabel = "Save article"
+        saveButton.accessibilityHint = "Saves this article to your reading list"
+        saveButton.addTarget(self, action: #selector(saveToReadingList), for: .touchUpInside)
+        saveButton.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            speakButton.widthAnchor.constraint(equalToConstant: 44),
+            speakButton.heightAnchor.constraint(equalToConstant: 44),
+            saveButton.widthAnchor.constraint(equalToConstant: 44),
+            saveButton.heightAnchor.constraint(equalToConstant: 44)
+        ])
+
+        let speak = UIBarButtonItem(customView: speakButton)
+        let save = UIBarButtonItem(customView: saveButton)
         let done = UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(closeTapped))
         navigationItem.rightBarButtonItems = [done, save, speak]
         synthesizer.delegate = self
+
+        swipeDismissGesture.edges = .left
+        swipeDismissGesture.cancelsTouchesInView = true
+        swipeDismissGesture.addTarget(self, action: #selector(swipeToDismiss(_:)))
+        view.addGestureRecognizer(swipeDismissGesture)
 
         textView.isEditable = false
         textView.adjustsFontForContentSizeCategory = true
@@ -153,41 +180,90 @@ final class ReaderViewController: UIViewController {
         return output
     }
 
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        stopSpeechAndAudio()
+    }
+
     @objc private func closeTapped() {
-        synthesizer.stopSpeaking(at: .immediate)
+        stopSpeechAndAudio()
+        view.transform = .identity
         dismiss(animated: true)
     }
 
+    @objc private func swipeToDismiss(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        let translation = gesture.translation(in: view).x
+        if gesture.state == .changed, translation > 0 {
+            view.transform = CGAffineTransform(translationX: min(translation, view.bounds.width * 0.35), y: 0)
+        } else if gesture.state == .ended {
+            if translation > 80 || gesture.velocity(in: view).x > 500 {
+                closeTapped()
+            } else {
+                UIView.animate(withDuration: 0.25) { self.view.transform = .identity }
+            }
+        } else if gesture.state == .cancelled || gesture.state == .failed {
+            UIView.animate(withDuration: 0.25) { self.view.transform = .identity }
+        }
+    }
+
+    private func stopSpeechAndAudio() {
+        synthesizer.stopSpeaking(at: .immediate)
+        isSpeaking = false
+        if isViewLoaded {
+            updateSpeechControl()
+        }
+        if ownsAudioSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            ownsAudioSession = false
+        }
+    }
+
+    private func updateSpeechControl() {
+        let symbol = isSpeaking ? "speaker.slash" : "speaker.wave.2"
+        speakButton.setImage(UIImage(systemName: symbol), for: .normal)
+        speakButton.accessibilityLabel = isSpeaking ? "Stop reading aloud" : "Read article aloud"
+        speakButton.accessibilityHint = isSpeaking ? "Stops read-aloud" : "Starts read-aloud"
+    }
+
     @objc private func toggleSpeaking() {
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-            isSpeaking = false
-            speakButton.image = UIImage(systemName: "speaker.wave.2")
+        if synthesizer.isSpeaking || isSpeaking {
+            stopSpeechAndAudio()
             return
         }
         // Playback category keeps read-aloud audible with the mute switch on.
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-        try? AVAudioSession.sharedInstance().setActive(true)
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+            try AVAudioSession.sharedInstance().setActive(true)
+            ownsAudioSession = true
+        } catch {
+            return
+        }
         let text = article.paragraphs.joined(separator: ". ")
         let utterance = AVSpeechUtterance(string: article.title + ". " + text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synthesizer.speak(utterance)
         isSpeaking = true
-        speakButton.image = UIImage(systemName: "speaker.slash")
+        updateSpeechControl()
     }
 
     @objc private func saveToReadingList() {
-        ReadingListStore.shared.add(title: article.title, url: "", paragraphs: article.paragraphs)
+        ReadingListStore.shared.add(title: article.title, url: article.url ?? "", paragraphs: article.paragraphs)
         let alert = UIAlertController(title: nil, message: "Saved to Reading List", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
         present(alert, animated: true)
+    }
+
+    deinit {
+        stopSpeechAndAudio()
     }
 }
 
 extension ReaderViewController: AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        isSpeaking = false
-        speakButton.image = UIImage(systemName: "speaker.wave.2")
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        DispatchQueue.main.async { [weak self] in self?.stopSpeechAndAudio() }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async { [weak self] in self?.stopSpeechAndAudio() }
     }
 }

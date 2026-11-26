@@ -112,8 +112,11 @@ enum ID3 {
         }
 
         if let artwork = tag.artwork {
+            let mime = tag.artworkMimeType
+            let safeMime = mime.isEmpty || mime.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
+                ? "image/jpeg" : mime
             var payload = Data([3])
-            payload.append(Data(tag.artworkMimeType.utf8))
+            payload.append(Data(safeMime.utf8))
             payload.append(0) // mime terminator
             payload.append(3) // picture type: cover
             payload.append(0) // empty description
@@ -125,18 +128,37 @@ enum ID3 {
         header.append(contentsOf: [4, 0, 0]) // v2.4.0, no flags
         header.append(contentsOf: syncSafeBytes(frames.count))
 
-        let fileData = try Data(contentsOf: url, options: .mappedIfSafe)
+        let fileManager = FileManager.default
+        let input = try FileHandle(forReadingFrom: url)
+        defer { try? input.close() }
+        let fileSize = try input.seekToEnd()
+        try input.seek(toOffset: 0)
+        let prefix = try input.read(upToCount: 10) ?? Data()
         var audioStart = 0
-        if fileData.count >= 10, String(data: fileData[0..<3], encoding: .ascii) == "ID3" {
-            audioStart = 10 + syncSafeValue(fileData[6..<10])
+        if prefix.count >= 10, String(data: prefix[0..<3], encoding: .ascii) == "ID3" {
+            let version = Int(prefix[3])
+            let tagSize = version >= 4
+                ? syncSafeValue(prefix[6..<10])
+                : Int(bigEndianValue(prefix[6..<10]))
+            guard tagSize >= 0, Int64(10 + tagSize) <= fileSize else { throw ID3Error.badTag }
+            audioStart = 10 + tagSize
         }
-        guard audioStart >= 0, audioStart <= fileData.count else { throw ID3Error.badTag }
 
-        var output = Data()
-        output.append(header)
-        output.append(frames)
-        output.append(fileData.subdata(in: audioStart..<fileData.count))
-        try output.write(to: url, options: .atomic)
+        let temporary = url.deletingLastPathComponent()
+            .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+        defer { try? fileManager.removeItem(at: temporary) }
+        try Data().write(to: temporary)
+        let output = try FileHandle(forWritingTo: temporary)
+        defer { try? output.close() }
+        try output.write(contentsOf: header)
+        try output.write(contentsOf: frames)
+        try input.seek(toOffset: UInt64(audioStart))
+        while let chunk = try input.read(upToCount: 1_048_576), !chunk.isEmpty {
+            try output.write(contentsOf: chunk)
+        }
+        try output.close()
+        try input.close()
+        _ = try fileManager.replaceItemAt(url, withItemAt: temporary)
     }
 
     private static func frame(identifier: String, payload: Data) -> Data {

@@ -16,12 +16,20 @@ final class BrowserTab: NSObject {
     var onVideoTapped: ((URL, String) -> Void)?
     /// Long-pressed a link → (url, wants private tab).
     var onOpenLink: ((URL, Bool) -> Void)?
-    /// Start-page quick action button: "private" | "qr" | "voice" | "downloads".
+    /// Start-page quick action button: "private" | "qr" | "voice" | "downloads" | "search".
     var onQuickAction: ((String) -> Void)?
+    var onPresentAlert: ((UIAlertController) -> Bool)?
 
     /// Memory Saver: true while the page is released and will reload on activation.
     private(set) var isHibernated = false
     private var hibernatedURL: URL?
+    private var failedURL: URL?
+    private var pendingURL: URL?
+    private var isLoadingErrorPage = false
+    private var isLoadingStartPage = false
+    private weak var activeNavigation: WKNavigation?
+    private weak var generatedNavigation: WKNavigation?
+    private var navigationID = UUID()
     var lastActivatedAt = Date()
     /// RSS/Atom feeds advertised by the current page (set on finish loading).
     private(set) var rssFeeds: [String] = []
@@ -42,6 +50,15 @@ final class BrowserTab: NSObject {
     /// URL shown in chrome when the tab may be hibernated.
     var displayURL: URL? {
         webView.url ?? hibernatedURL
+    }
+
+    var sessionURL: URL? {
+        guard failedURL == nil, let url = displayURL, url.isWebURL else { return nil }
+        return url
+    }
+
+    var isStartPage: Bool {
+        failedURL == nil && displayURL?.isWebURL != true
     }
 
     // MARK: - Per-site ad allowlist
@@ -126,6 +143,10 @@ final class BrowserTab: NSObject {
               ev.stopPropagation();
               var v = document.querySelector('video');
               var src = v ? (v.currentSrc || v.src || (v.querySelector('source') && v.querySelector('source').src) || '') : '';
+              if (src && !/^https?:/i.test(src) && window.webkit.messageHandlers.magdyAction) {
+                window.webkit.messageHandlers.magdyAction.postMessage('unsupported-video');
+                return;
+              }
               if (src && window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.magdyVideo) {
                 window.webkit.messageHandlers.magdyVideo.postMessage({ url: src, title: document.title || '' });
               }
@@ -152,6 +173,10 @@ final class BrowserTab: NSObject {
             const source = video.querySelector('source');
             const src = video.currentSrc || video.src || (source && source.src) || '';
             if (!src) return;
+            if (!/^https?:/i.test(src) && window.webkit.messageHandlers.magdyAction) {
+              window.webkit.messageHandlers.magdyAction.postMessage('unsupported-video');
+              return;
+            }
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.magdyVideo) {
               window.webkit.messageHandlers.magdyVideo.postMessage({
                 url: src, title: document.title || ''
@@ -195,7 +220,7 @@ final class BrowserTab: NSObject {
             self?.applyNewRuleLists()
         }
         progressObservation = webView.observe(\.estimatedProgress, options: [.new]) { [weak self] webView, _ in
-            guard let self else { return }
+            guard let self, webView === self.webView else { return }
             self.onProgress?(self, webView.estimatedProgress)
         }
     }
@@ -215,6 +240,13 @@ final class BrowserTab: NSObject {
             self.blockerObserver = nil
         }
         progressObservation = nil
+        activeNavigation = nil
+        generatedNavigation = nil
+        navigationID = UUID()
+        pendingURL = nil
+        isLoadingErrorPage = false
+        isLoadingStartPage = false
+        onLoadingChange?(self, false)
         // The replacement webView reuses baseConfiguration, whose userContentController
         // already carries every rule list — do NOT reset appliedRuleLists (double-attach).
         webView = WKWebView(frame: frame, configuration: baseConfiguration)
@@ -243,57 +275,134 @@ final class BrowserTab: NSObject {
     }
 
     func loadStartPage() {
+        failedURL = nil
+        pendingURL = nil
+        activeNavigation = nil
+        generatedNavigation = nil
+        navigationID = UUID()
+        isLoadingErrorPage = false
+        isLoadingStartPage = true
         // Documents is the base URL so the wallpaper resolves as a relative resource.
-        webView.loadHTMLString(SpeedDialPage.html(), baseURL: WallpaperStore.shared.documentsURL)
+        let navigation = webView.loadHTMLString(
+            SpeedDialPage.html(includeHistory: !isPrivate),
+            baseURL: WallpaperStore.shared.documentsURL
+        )
+        activeNavigation = navigation
+        generatedNavigation = navigation
     }
 
     func load(url: URL) {
+        guard url.isWebURL else { return }
+        failedURL = nil
+        pendingURL = url
+        activeNavigation = nil
+        generatedNavigation = nil
+        navigationID = UUID()
+        isLoadingErrorPage = false
+        isLoadingStartPage = false
         applyRememberedUserAgent(for: url)
-        webView.load(URLRequest(url: url))
+        activeNavigation = webView.load(URLRequest(url: url))
     }
 
     func reload() {
-        if webView.url?.absoluteString == nil { loadStartPage() } else { webView.reload() }
+        if let failedURL {
+            load(url: failedURL)
+        } else if displayURL?.isWebURL == true {
+            generatedNavigation = nil
+            navigationID = UUID()
+            isLoadingErrorPage = false
+            isLoadingStartPage = false
+            activeNavigation = webView.reload()
+        } else {
+            loadStartPage()
+        }
+    }
+
+    private func retryLastFailure() {
+        guard let failedURL else {
+            loadStartPage()
+            return
+        }
+        load(url: failedURL)
     }
 
     func goBack() { webView.goBack() }
     func goForward() { webView.goForward() }
-    func stopLoading() { webView.stopLoading() }
+    func stopLoading() {
+        webView.stopLoading()
+        activeNavigation = nil
+        generatedNavigation = nil
+        navigationID = UUID()
+        pendingURL = nil
+        isLoadingErrorPage = false
+        isLoadingStartPage = false
+        onLoadingChange?(self, false)
+    }
 }
 
 // MARK: - Navigation
 
 extension BrowserTab: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        guard webView === self.webView else { return }
+        let isGeneratedNavigation = generatedNavigation === navigation
+            || (activeNavigation === navigation && (isLoadingStartPage || isLoadingErrorPage))
+        activeNavigation = navigation
+        navigationID = UUID()
+        if !isGeneratedNavigation {
+            generatedNavigation = nil
+            isLoadingErrorPage = false
+            isLoadingStartPage = false
+            pendingURL = navigation.request.url?.isWebURL == true ? navigation.request.url : nil
+        }
         onLoadingChange?(self, true)
         // Old page's feeds must not leak into the new one's menu.
         rssFeeds = []
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        guard webView === self.webView, activeNavigation === navigation else { return }
+        if isLoadingErrorPage { return }
+        isLoadingStartPage = false
+        failedURL = nil
+        pendingURL = webView.url
         // Host is final here — re-evaluate the per-site ad allowlist for this navigation.
         applyNewRuleLists()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard webView === self.webView, activeNavigation === navigation else { return }
         onLoadingChange?(self, false)
+        if isLoadingErrorPage {
+            isLoadingErrorPage = false
+            isLoadingStartPage = false
+            pendingURL = nil
+            activeNavigation = nil
+            generatedNavigation = nil
+            return
+        }
+        isLoadingStartPage = false
+        failedURL = nil
+        pendingURL = nil
         if let pageTitle = webView.title, !pageTitle.isEmpty, pageTitle != title {
             title = pageTitle
             onTitleChange?(self)
         }
-        // Private tabs leave no trace on the device.
-        if !isPrivate, let url = webView.url {
+        // Private tabs leave no trace; generated start/error pages are not history.
+        if !isPrivate, let url = webView.url, url.isWebURL {
             HistoryStore.shared.record(url: url, title: webView.title)
         }
         if !isPrivate {
             BlockStats.shared.audit(webView: webView)
         }
         applyNightModeIfNeeded()
-        detectRSSFeeds()
+        detectRSSFeeds(in: webView, navigationID: navigationID)
+        activeNavigation = nil
+        generatedNavigation = nil
     }
 
     /// Reads the page's advertised RSS/Atom links so the menu can offer them.
-    private func detectRSSFeeds() {
+    private func detectRSSFeeds(in webView: WKWebView, navigationID: UUID) {
         let script = """
         (function () {
           const feeds = [];
@@ -305,6 +414,8 @@ extension BrowserTab: WKNavigationDelegate {
         """
         webView.evaluateJavaScript(script) { [weak self] result, _ in
             guard let self,
+                  webView === self.webView,
+                  self.navigationID == navigationID,
                   let json = result as? String,
                   let data = json.data(using: .utf8),
                   let feeds = try? JSONDecoder().decode([String].self, from: data) else { return }
@@ -313,30 +424,80 @@ extension BrowserTab: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView, activeNavigation === navigation else { return }
         onLoadingChange?(self, false)
+        if (error as NSError).code == NSURLErrorCancelled {
+            activeNavigation = nil
+            generatedNavigation = nil
+            navigationID = UUID()
+            pendingURL = nil
+            isLoadingErrorPage = false
+            isLoadingStartPage = false
+            return
+        }
+        showLoadError(in: webView, navigation: navigation)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        guard webView === self.webView, activeNavigation === navigation else { return }
         onLoadingChange?(self, false)
-        if (error as NSError).code == NSURLErrorCancelled { return }
-        let host = webView.url?.host ?? webView.backForwardList.currentItem?.url.host ?? "page"
-        webView.loadHTMLString(Self.errorPage(host: host), baseURL: nil)
+        if (error as NSError).code == NSURLErrorCancelled {
+            activeNavigation = nil
+            generatedNavigation = nil
+            navigationID = UUID()
+            pendingURL = nil
+            isLoadingErrorPage = false
+            isLoadingStartPage = false
+            return
+        }
+        showLoadError(in: webView, navigation: navigation)
+    }
+
+    private func showLoadError(in webView: WKWebView, navigation: WKNavigation?) {
+        guard !isLoadingErrorPage else { return }
+        if let requested = navigation?.request.url, requested.isWebURL {
+            failedURL = requested
+        } else if let pendingURL, pendingURL.isWebURL {
+            failedURL = pendingURL
+        } else if let current = webView.url, current.isWebURL {
+            failedURL = current
+        }
+        let host = failedURL?.host ?? "This page"
+        activeNavigation = nil
+        generatedNavigation = nil
+        navigationID = UUID()
+        pendingURL = nil
+        isLoadingStartPage = false
+        isLoadingErrorPage = true
+        let errorNavigation = webView.loadHTMLString(
+            Self.errorPage(host: host),
+            baseURL: WallpaperStore.shared.documentsURL
+        )
+        activeNavigation = errorNavigation
+        generatedNavigation = errorNavigation
     }
 
     private static func errorPage(host: String) -> String {
         """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>body{font-family:-apple-system,system-ui,sans-serif;background:#0D0E12;color:#F3F4F6;
-        display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
-        .card{background:#181920;border-radius:16px;padding:36px 30px;max-width:320px;text-align:center;
-        box-shadow:0 8px 24px rgba(0,0,0,.35)}
-        h1{font-size:20px;margin:0 0 8px}p{color:#9CA3AF;font-size:14px;margin:0 0 20px}
-        button{background:#8B5CF6;color:#fff;border:0;border-radius:12px;padding:12px 28px;
-        font-size:15px;font-weight:700}</style></head>
-        <body><div class="card"><h1>\(host) is unreachable</h1>
+        <meta name="color-scheme" content="light dark">
+        <style>body{font-family:-apple-system,system-ui,sans-serif;background:#FBF8FF;color:#1B1B21;
+        display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;box-sizing:border-box}
+        .card{background:#fff;border:1px solid rgba(201,196,213,.55);border-radius:20px;padding:36px 30px;max-width:340px;text-align:center;
+        box-shadow:0 8px 24px rgba(27,27,33,.08)}
+        h1{font-size:20px;margin:0 0 8px}p{color:#484553;font-size:14px;line-height:1.5;margin:0 0 20px}
+        button{background:#5F48BD;color:#fff;border:0;border-radius:12px;padding:12px 28px;
+        font-size:15px;font-weight:700;min-height:44px}
+        @media(prefers-color-scheme:dark){body{background:#0D0E12;color:#F3F4F6}.card{background:#181920;border-color:#262734;
+        box-shadow:0 8px 24px rgba(0,0,0,.35)}p{color:#9CA3AF}button{background:#8B5CF6}}</style></head>
+        <body><div class="card"><h1>\(escapeHTML(host)) is unreachable</h1>
         <p>Check the address or your connection.</p>
-        <button onclick="location.reload()">Try Again</button></div></body></html>
+        <button onclick="webkit.messageHandlers.magdyAction.postMessage('retry')">Try Again</button></div></body></html>
         """
+    }
+
+    private static func escapeHTML(_ text: String) -> String {
+        SpeedDialPage.escape(text)
     }
 
     func webView(
@@ -344,9 +505,25 @@ extension BrowserTab: WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
+        guard webView === self.webView else {
+            decisionHandler(.cancel)
+            return
+        }
         if navigationAction.shouldPerformDownload {
             decisionHandler(.download)
             return
+        }
+        if navigationAction.targetFrame?.isMainFrame != false,
+           let url = navigationAction.request.url,
+           !url.isWebURL {
+            let scheme = url.scheme?.lowercased()
+            let isGeneratedBase = url.standardizedFileURL == WallpaperStore.shared.documentsURL.standardizedFileURL
+            let isGeneratedPage = scheme == "about"
+                || (scheme == "file" && isGeneratedBase && (isLoadingStartPage || isLoadingErrorPage))
+            guard isGeneratedPage else {
+                decisionHandler(.cancel)
+                return
+            }
         }
         decisionHandler(.allow)
     }
@@ -368,10 +545,12 @@ extension BrowserTab: WKNavigationDelegate {
 
 extension BrowserTab: WKUIDelegate {
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        guard webView === self.webView else { return }
         DownloadManager.shared.attach(download: download, url: navigationAction.request.url)
     }
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        guard webView === self.webView else { return }
         DownloadManager.shared.attach(download: download, url: navigationResponse.response.url)
     }
 
@@ -382,8 +561,9 @@ extension BrowserTab: WKUIDelegate {
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         // target="_blank" links stay in this tab instead of opening a dead window.
-        if navigationAction.targetFrame == nil, let url = navigationAction.request.url {
-            webView.load(URLRequest(url: url))
+        if webView === self.webView, navigationAction.targetFrame == nil,
+           let url = navigationAction.request.url {
+            load(url: url)
         }
         return nil
     }
@@ -401,10 +581,19 @@ extension BrowserTab: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping () -> Void
     ) {
-        // Show real alerts — silently swallowing them hides page errors.
         let alert = UIAlertController(title: webView.title ?? webView.url?.host, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler() })
-        presentingViewController()?.present(alert, animated: true)
+        var completed = false
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+            guard !completed else { return }
+            completed = true
+            completionHandler()
+        })
+        if let presenter = presentingViewController(), presenter.presentedViewController == nil {
+            presenter.present(alert, animated: true)
+        } else if onPresentAlert?(alert) != true {
+            completed = true
+            completionHandler()
+        }
     }
 
     func webView(
@@ -413,11 +602,24 @@ extension BrowserTab: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping (Bool) -> Void
     ) {
-        // Real confirm — auto-answering OK would fire destructive actions on pages.
         let alert = UIAlertController(title: webView.title ?? webView.url?.host, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in completionHandler(true) })
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in completionHandler(false) })
-        presentingViewController()?.present(alert, animated: true)
+        var completed = false
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
+            guard !completed else { return }
+            completed = true
+            completionHandler(true)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            guard !completed else { return }
+            completed = true
+            completionHandler(false)
+        })
+        if let presenter = presentingViewController(), presenter.presentedViewController == nil {
+            presenter.present(alert, animated: true)
+        } else if onPresentAlert?(alert) != true {
+            completed = true
+            completionHandler(false)
+        }
     }
 
     // Camera / mic / motion sensors: pages get the system prompt automatically.
@@ -603,20 +805,31 @@ extension BrowserTab {
 // MARK: - Script messages
 
 extension BrowserTab: WKScriptMessageHandler {
+    private func frameIsMainDocument(_ frame: WKFrameInfo) -> Bool {
+        frame.isMainFrame && frame.request.url?.isWebURL == true
+    }
+
     func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
         if message.name == "magdyAction", let action = message.body as? String {
+            guard message.frameInfo.isMainFrame else { return }
             DispatchQueue.main.async { [weak self] in
-                self?.onQuickAction?(action)
+                guard let self else { return }
+                if action == "retry" {
+                    self.retryLastFailure()
+                } else {
+                    self.onQuickAction?(action)
+                }
             }
             return
         }
         guard message.name == "magdyVideo",
+              frameIsMainDocument(message.frameInfo),
               let payload = message.body as? [String: Any],
               let urlString = payload["url"] as? String,
-              let url = URL(string: urlString) else { return }
+              let url = URL(string: urlString), url.isWebURL else { return }
         let title = payload["title"] as? String ?? ""
         DispatchQueue.main.async { [weak self] in
             self?.onVideoTapped?(url, title)

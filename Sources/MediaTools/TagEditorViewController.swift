@@ -7,6 +7,8 @@ final class TagEditorViewController: UIViewController {
     private let url: URL
     private var tag = ID3Tag()
     private var artworkData: Data?
+    private var artworkMimeType = "image/jpeg"
+    private let writeQueue = DispatchQueue(label: "com.magdy.id3.write", qos: .utility)
 
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
@@ -118,6 +120,7 @@ final class TagEditorViewController: UIViewController {
         } catch {
             tag = ID3Tag()
         }
+        artworkMimeType = tag.artworkMimeType
         fields["title"]?.text = tag.title
         fields["artist"]?.text = tag.artist
         fields["album"]?.text = tag.album
@@ -151,13 +154,26 @@ final class TagEditorViewController: UIViewController {
         updated.track = fields["track"]?.text ?? ""
         updated.comment = fields["comment"]?.text ?? ""
         updated.artwork = artworkData
-        updated.artworkMimeType = "image/jpeg"
+        updated.artworkMimeType = artworkMimeType
+        let targetURL = url
+        navigationItem.rightBarButtonItem?.isEnabled = false
 
-        do {
-            try ID3.write(updated, to: url)
-            showAlert(title: "Saved", message: "Tags written to \(url.lastPathComponent).")
-        } catch {
-            showAlert(title: "Failed", message: error.localizedDescription)
+        writeQueue.async { [weak self] in
+            var failure: Error?
+            do {
+                try ID3.write(updated, to: targetURL)
+            } catch {
+                failure = error
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.navigationItem.rightBarButtonItem?.isEnabled = true
+                if let failure {
+                    self.showAlert(title: "Failed", message: failure.localizedDescription)
+                } else {
+                    self.showAlert(title: "Saved", message: "Tags written to \(targetURL.lastPathComponent).")
+                }
+            }
         }
     }
 
@@ -180,6 +196,7 @@ extension TagEditorViewController: PHPickerViewControllerDelegate {
             guard let resized, let jpeg = resized.jpegData(compressionQuality: 0.85) else { return }
             DispatchQueue.main.async {
                 self?.artworkData = jpeg
+                self?.artworkMimeType = "image/jpeg"
                 self?.artworkView.image = resized
             }
         }

@@ -1,63 +1,147 @@
+import ImageIO
 import PhotosUI
 import UIKit
+import UniformTypeIdentifiers
 
-/// Private vault: media imported into the app sandbox, opened behind Face ID.
+/// Private vault: media imported into the app sandbox, opened behind device-owner authentication.
 final class VaultStore {
     static let shared = VaultStore()
 
     private(set) var entries: [String] = []
 
     private let key = "magdy.vault.entries"
+    private let queue = DispatchQueue(label: "com.magdy.vault", qos: .utility)
 
     var directory: URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dir = docs.appendingPathComponent("Vault", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
-        return dir
+        FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("PrivateVault", isDirectory: true)
     }
 
     init() {
         reload()
     }
 
-    func reload() {
-        let names = UserDefaults.standard.stringArray(forKey: key) ?? []
-        entries = names.filter { FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path) }
-    }
-
-    func importItem(at source: URL) {
-        let name = uniqueName(source.lastPathComponent)
-        let destination = directory.appendingPathComponent(name)
-        try? FileManager.default.removeItem(at: destination)
-        do {
-            try FileManager.default.copyItem(at: source, to: destination)
-            var names = UserDefaults.standard.stringArray(forKey: key) ?? []
-            names.append(name)
-            UserDefaults.standard.set(names, forKey: key)
-            reload()
-        } catch {
-            // Ignore unreadable items.
+    /// Reads and validates the manifest off the main thread, then publishes a UI snapshot.
+    func reload(completion: (([String]) -> Void)? = nil) {
+        queue.async {
+            let names: [String]
+            do {
+                _ = try self.protectedDirectory()
+                self.migrateLegacyItemsIfNeeded()
+                names = try self.readNames()
+            } catch {
+                names = []
+            }
+            DispatchQueue.main.async {
+                self.entries = names
+                completion?(names)
+            }
         }
     }
 
-    func remove(_ name: String) {
-        try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
-        var names = UserDefaults.standard.stringArray(forKey: key) ?? []
-        names.removeAll { $0 == name }
+    /// Performs the copy on the caller's background queue. Returns false without
+    /// leaving a partial destination when the import cannot be completed.
+    @discardableResult
+    func importItem(at source: URL) -> Bool {
+        queue.sync {
+            guard source.isFileURL, isBasename(source.lastPathComponent) else { return false }
+            do {
+                let values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard values.isRegularFile == true, values.isSymbolicLinkKey != true else { return false }
+                let vault = try protectedDirectory()
+                let name = try uniqueName(source.lastPathComponent, in: vault)
+                let destination = vault.appendingPathComponent(name)
+                var copied = false
+                do {
+                    try FileManager.default.copyItem(at: source, to: destination)
+                    copied = true
+                    try protect(destination)
+                    var names = try readNames()
+                    names.append(name)
+                    UserDefaults.standard.set(names, forKey: key)
+                    publish(names)
+                    return true
+                } catch {
+                    if copied { try? FileManager.default.removeItem(at: destination) }
+                    return false
+                }
+            } catch {
+                return false
+            }
+        }
+    }
+
+    func remove(_ name: String, completion: (() -> Void)? = nil) {
+        queue.async {
+            if isBasename(name) {
+                let destination = self.directory.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    try? FileManager.default.removeItem(at: destination)
+                }
+                if let names = try? self.readNames() {
+                    UserDefaults.standard.set(names, forKey: self.key)
+                    self.publish(names)
+                }
+            }
+            DispatchQueue.main.async { completion?() }
+        }
+    }
+
+    func url(for name: String) -> URL? {
+        isBasename(name) ? directory.appendingPathComponent(name) : nil
+    }
+
+    private func protectedDirectory() throws -> URL {
+        let vault = directory
+        try FileManager.default.createDirectory(
+            at: vault,
+            withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.complete]
+        )
+        try protect(vault)
+        return vault
+    }
+
+    private func protect(_ url: URL) throws {
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: url.path
+        )
+    }
+
+    private func readNames() throws -> [String] {
+        let stored = (UserDefaults.standard.stringArray(forKey: key) ?? []).filter { isBasename($0) }
+        let diskURLs = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: []
+        )
+        let disk = diskURLs.filter { url in
+            guard isBasename(url.lastPathComponent) else { return false }
+            do {
+                let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                guard values.isRegularFile == true, values.isSymbolicLinkKey != true else { return false }
+                try protect(url)
+                return true
+            } catch {
+                return false
+            }
+        }.map(\.lastPathComponent)
+
+        let diskSet = Set(disk)
+        let storedSet = Set(stored)
+        var seen = Set<String>()
+        let ordered = stored.filter { seen.insert($0).inserted && diskSet.contains($0) }
+        let recovered = disk.filter { !storedSet.contains($0) }.sorted()
+        let names = ordered + recovered
         UserDefaults.standard.set(names, forKey: key)
-        reload()
+        return names
     }
 
-    func url(for name: String) -> URL {
-        directory.appendingPathComponent(name)
-    }
-
-    private func uniqueName(_ proposed: String) -> String {
+    private func uniqueName(_ proposed: String, in vault: URL) throws -> String {
         var candidate = proposed
         var counter = 1
-        while FileManager.default.fileExists(atPath: directory.appendingPathComponent(candidate).path) {
+        while FileManager.default.fileExists(atPath: vault.appendingPathComponent(candidate).path) {
             let ext = (proposed as NSString).pathExtension
             let base = (proposed as NSString).deletingPathExtension
             candidate = ext.isEmpty ? "\(base) (\(counter))" : "\(base) (\(counter)).\(ext)"
@@ -65,13 +149,81 @@ final class VaultStore {
         }
         return candidate
     }
+
+    private func isBasename(_ name: String) -> Bool {
+        guard !name.isEmpty, name != ".", name != "..",
+              !name.contains("/"), !name.contains("\\"), !name.utf8.contains(0),
+              (name as NSString).pathComponents.count == 1,
+              (name as NSString).lastPathComponent == name else { return false }
+        return true
+    }
+
+    private func publish(_ names: [String]) {
+        DispatchQueue.main.async { self.entries = names }
+    }
+
+    /// Moves readable files from the old shared Documents/Vault location into
+    /// protected Library/PrivateVault. Invalid entries and symlinks are never followed.
+    private func migrateLegacyItemsIfNeeded() {
+        let manager = FileManager.default
+        let legacy = manager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Vault", isDirectory: true)
+        guard manager.fileExists(atPath: legacy.path), let vault = try? protectedDirectory() else { return }
+
+        do {
+            let sources = try manager.contentsOfDirectory(
+                at: legacy,
+                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+                options: []
+            )
+            var names = (UserDefaults.standard.stringArray(forKey: key) ?? []).filter { isBasename($0) }
+            for source in sources {
+                let name = source.lastPathComponent
+                guard isBasename(name) else { continue }
+                let values: URLResourceValues
+                do {
+                    values = try source.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                } catch {
+                    continue
+                }
+                guard values.isRegularFile == true, values.isSymbolicLinkKey != true else { continue }
+                let destinationName: String
+                do {
+                    destinationName = try uniqueName(name, in: vault)
+                } catch {
+                    continue
+                }
+                let destination = vault.appendingPathComponent(destinationName)
+                do {
+                    try manager.moveItem(at: source, to: destination)
+                    do {
+                        try protect(destination)
+                    } catch {
+                        try? manager.moveItem(at: destination, to: source)
+                        continue
+                    }
+                    if !names.contains(destinationName) { names.append(destinationName) }
+                    UserDefaults.standard.set(names, forKey: key)
+                } catch {
+                    // Keep the source in place if the move failed.
+                }
+            }
+            if try manager.contentsOfDirectory(atPath: legacy.path).isEmpty {
+                try manager.removeItem(at: legacy)
+            }
+        } catch {
+            // A later reload can retry; no legacy path is used for new imports.
+        }
+    }
 }
 
-/// Face-ID-gated grid of vault items, with import via the photo picker or Files.
+/// Device-owner-authenticated grid of vault items, with import via the photo picker or Files.
 final class VaultViewController: UICollectionViewController, PHPickerViewControllerDelegate {
 
     private let store = VaultStore.shared
     private var files: [String] = []
+    private var requiresUnlockOnForeground = false
+    private var reloadGeneration = 0
 
     init() {
         let layout = UICollectionViewFlowLayout()
@@ -93,6 +245,19 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "plus"), style: .plain, target: self, action: #selector(importTapped)
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(protectBeforeBackground), name: UIApplication.willResignActiveNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleDidEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleWillEnterForeground), name: UIApplication.willEnterForegroundNotification, object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -101,8 +266,44 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
     }
 
     private func reload() {
-        files = store.entries
+        reloadGeneration &+= 1
+        let generation = reloadGeneration
+        store.reload { [weak self] names in
+            guard let self, generation == self.reloadGeneration, !self.requiresUnlockOnForeground else { return }
+            self.files = names
+            self.collectionView.reloadData()
+        }
+    }
+
+    @objc private func protectBeforeBackground() {
+        guard isViewLoaded, view.window != nil else { return }
+        reloadGeneration &+= 1
+        requiresUnlockOnForeground = true
+        files.removeAll()
         collectionView.reloadData()
+        authenticateVault()
+    }
+
+    @objc private func handleDidEnterBackground() {
+        if !requiresUnlockOnForeground { protectBeforeBackground() }
+    }
+
+    @objc private func handleWillEnterForeground() {
+        guard requiresUnlockOnForeground else { return }
+        requiresUnlockOnForeground = false
+        guard isViewLoaded, view.window != nil else { return }
+        if AppLock.isUnlocked {
+            reload()
+        } else {
+            authenticateVault()
+        }
+    }
+
+    private func authenticateVault() {
+        let presenter = view.window?.rootViewController ?? navigationController ?? self
+        AppLock.gate(viewController: presenter, reason: "Unlock your Private Vault") { [weak self] in
+            self?.reload()
+        }
     }
 
     @objc private func importTapped() {
@@ -132,6 +333,11 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
     private func openFilePicker() {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.image, .movie, .audio], asCopy: true)
         picker.delegate = self
+        if let popover = picker.popoverPresentationController {
+            popover.barButtonItem = navigationItem.leftBarButtonItem
+            popover.sourceRect = view.bounds
+            popover.sourceView = view
+        }
         present(picker, animated: true)
     }
 
@@ -141,33 +347,44 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
         picker.dismiss(animated: true)
         for result in results {
             let provider = result.itemProvider
-            let store = self.store
             if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-                provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, _ in
-                    guard let url else { return }
-                    // The provider temp file is only valid inside this callback —
-                    // copy synchronously, then hop to main for the UI update.
-                    let stable = FileManager.default.temporaryDirectory
+                provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { [weak self] url, _ in
+                    guard let self, let url else { return }
+                    let staged = FileManager.default.temporaryDirectory
                         .appendingPathComponent(UUID().uuidString + "." + url.pathExtension)
-                    try? FileManager.default.copyItem(at: url, to: stable)
-                    DispatchQueue.main.async {
-                        store.importItem(at: stable)
-                        self.reload()
+                    do {
+                        try FileManager.default.copyItem(at: url, to: staged)
+                    } catch {
+                        return
+                    }
+                    DispatchQueue.global(qos: .utility).async {
+                        self.finishImport(at: staged, removeSourceWhenDone: true)
                     }
                 }
             } else if provider.canLoadObject(ofClass: UIImage.self) {
-                provider.loadObject(ofClass: UIImage.self) { object, _ in
-                    guard let image = object as? UIImage else { return }
-                    DispatchQueue.main.async {
-                        // Unique name — two photos in the same second must not overwrite each other.
-                        let name = "photo-\(UUID().uuidString).png"
-                        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-                        try? image.pngData()?.write(to: url)
-                        store.importItem(at: url)
-                        self.reload()
+                provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+                    guard let self, let image = object as? UIImage else { return }
+                    DispatchQueue.global(qos: .utility).async {
+                        let staged = FileManager.default.temporaryDirectory
+                            .appendingPathComponent("photo-\(UUID().uuidString).png")
+                        defer { try? FileManager.default.removeItem(at: staged) }
+                        guard let data = image.pngData(),
+                              (try? data.write(to: staged, options: .atomic)) != nil else { return }
+                        self.finishImport(at: staged, removeSourceWhenDone: false)
                     }
                 }
             }
+        }
+    }
+
+    /// Called only from a background queue. Provider staging files are always removed.
+    private func finishImport(at source: URL, removeSourceWhenDone: Bool) {
+        if removeSourceWhenDone {
+            defer { try? FileManager.default.removeItem(at: source) }
+        }
+        let imported = store.importItem(at: source)
+        DispatchQueue.main.async { [weak self] in
+            if imported { self?.reload() }
         }
     }
 
@@ -179,18 +396,22 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
 
     override func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "cell", for: indexPath) as! VaultCell
-        cell.configure(url: store.url(for: files[indexPath.item]))
+        if let url = store.url(for: files[indexPath.item]) {
+            cell.configure(url: url)
+        }
         return cell
     }
 
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        let url = store.url(for: files[indexPath.item])
+        guard let url = store.url(for: files[indexPath.item]) else { return }
         let preview = UIActivityViewController(activityItems: [url], applicationActivities: nil)
         preview.completionWithItemsHandler = { _, _, _, _ in
             // Sharing hands the file out only while unlocked; nothing persists outside the sandbox.
         }
-        // iPad requires a popover anchor.
-        preview.popoverPresentationController?.sourceView = collectionView.cellForItem(at: indexPath)
+        if let popover = preview.popoverPresentationController {
+            popover.sourceView = collectionView.cellForItem(at: indexPath) ?? collectionView
+            popover.sourceRect = popover.sourceView?.bounds ?? collectionView.bounds
+        }
         present(preview, animated: true)
     }
 
@@ -199,28 +420,30 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
         return UIContextMenuConfiguration(actionProvider: { _ in
             UIMenu(children: [
                 UIAction(title: "Remove from Vault", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
-                    self?.store.remove(name)
-                    self?.reload()
+                    self?.store.remove(name) { [weak self] in self?.reload() }
                 }
             ])
         })
     }
 }
 
-import UniformTypeIdentifiers
-
 extension VaultViewController: UIDocumentPickerDelegate {
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         for url in urls {
-            store.importItem(at: url)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+                let hasAccess = url.startAccessingSecurityScopedResource()
+                defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
+                self.finishImport(at: url, removeSourceWhenDone: false)
+            }
         }
-        reload()
     }
 }
 
 final class VaultCell: UICollectionViewCell {
     let imageView = UIImageView()
     let label = UILabel()
+    private var loadToken = UUID()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -249,15 +472,52 @@ final class VaultCell: UICollectionViewCell {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        loadToken = UUID()
+        imageView.image = nil
+        label.text = nil
+    }
+
     func configure(url: URL) {
-        if (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType?.conforms(to: .movie)) == true {
-            imageView.image = UIImage(systemName: "video.fill")
-            imageView.tintColor = Theme.primary
-            imageView.contentMode = .center
-        } else {
-            imageView.contentMode = .scaleAspectFill
-            imageView.image = UIImage(contentsOfFile: url.path)
-        }
+        loadToken = UUID()
+        let token = loadToken
         label.text = url.lastPathComponent
+        imageView.image = UIImage(systemName: "photo")
+        imageView.tintColor = Theme.textSecondary
+        imageView.contentMode = .center
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let isMovie = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType?.conforms(to: .movie)) == true
+            let thumbnail = isMovie ? nil : Self.thumbnail(at: url)
+            DispatchQueue.main.async {
+                guard let self, self.loadToken == token else { return }
+                if isMovie {
+                    self.imageView.image = UIImage(systemName: "video.fill")
+                    self.imageView.tintColor = Theme.primary
+                    self.imageView.contentMode = .center
+                } else if let thumbnail {
+                    self.imageView.image = thumbnail
+                    self.imageView.tintColor = nil
+                    self.imageView.contentMode = .scaleAspectFill
+                } else {
+                    self.imageView.image = UIImage(systemName: "doc.fill")
+                    self.imageView.tintColor = Theme.textSecondary
+                    self.imageView.contentMode = .center
+                }
+            }
+        }
+    }
+
+    private static func thumbnail(at url: URL) -> UIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: 220,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: image)
     }
 }

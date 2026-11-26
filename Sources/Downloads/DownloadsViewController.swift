@@ -78,9 +78,13 @@ final class DownloadsViewController: UITableViewController, UISearchResultsUpdat
         case .paused:
             content.secondaryText = "Paused · \(Int(item.progress * 100))%"
         default:
-            content.secondaryText = item.totalBytes > 0
-                ? "\(Int(item.progress * 100))% · \(ByteCountFormatter.string(fromByteCount: item.bytesWritten, countStyle: .file))"
-                : "Starting…"
+            if item.isPausing {
+                content.secondaryText = "Pausing…"
+            } else {
+                content.secondaryText = item.totalBytes > 0
+                    ? "\(Int(item.progress * 100))% · \(ByteCountFormatter.string(fromByteCount: item.bytesWritten, countStyle: .file))"
+                    : "Starting…"
+            }
         }
         cell.contentConfiguration = content
         cell.accessoryType = item.state == .finished ? .disclosureIndicator : .none
@@ -122,7 +126,7 @@ final class DownloadsViewController: UITableViewController, UISearchResultsUpdat
             cancel.backgroundColor = .systemOrange
             var actions = [delete, cancel]
             // Only URLSession tasks support pause/resume — WKDownload rows skip Pause.
-            if item.task != nil {
+            if item.task != nil, !item.isPausing {
                 let pause = UIContextualAction(style: .normal, title: "Pause") { _, _, completion in
                     self.manager.pause(item)
                     completion(true)

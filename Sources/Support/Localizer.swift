@@ -136,12 +136,18 @@ enum L {
         UserDefaults.standard.string(forKey: "magdy.language") ?? "system"
     }
 
-    static var resolvedLanguage: String {
-        if language == "system" {
-            let code = Locale.preferredLanguages.first?.lowercased() ?? "en"
-            return String(code.prefix(2))
+    static var languageTag: String {
+        let raw = language == "system" ? (Locale.preferredLanguages.first ?? "en") : language
+        let locale = Locale(identifier: raw)
+        let base = locale.languageCode?.identifier.lowercased() ?? String(raw.prefix(2)).lowercased()
+        if base == "zh", let script = locale.scriptCode?.identifier.lowercased() {
+            return "zh-\(script)"
         }
-        return language
+        return base
+    }
+
+    static var resolvedLanguage: String {
+        String(languageTag.prefix(2))
     }
 
     static var isRightToLeft: Bool {

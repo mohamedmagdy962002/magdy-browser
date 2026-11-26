@@ -154,10 +154,14 @@ final class MediaToolsViewController: UITableViewController {
         let url = files[indexPath.row]
         let ext = url.pathExtension.lowercased()
 
-        if Self.audioExtensions.contains(ext) {
+        if ext == "mp3" {
             navigationController?.pushViewController(TagEditorViewController(url: url), animated: true)
-        } else {
+        } else if Self.videoExtensions.contains(ext) {
             navigationController?.pushViewController(UpscaleViewController(url: url), animated: true)
+        } else {
+            let player = VideoPlayerController(url: url, title: url.lastPathComponent, isLocal: true)
+            player.modalPresentationStyle = .fullScreen
+            present(player, animated: true)
         }
     }
 

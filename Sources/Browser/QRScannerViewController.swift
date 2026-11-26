@@ -7,8 +7,11 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     var onURLFound: ((URL) -> Void)?
 
     private let session = AVCaptureSession()
+    private let sessionQueue = DispatchQueue(label: "magdy.qr-scanner.session", qos: .userInitiated)
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var fired = false
+    private var isStopped = false
+    private var isConfigured = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -23,7 +26,12 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 DispatchQueue.main.async {
-                    granted ? self?.startSession() : self?.showUnavailable("Camera access denied — enable it in Settings")
+                    guard let self, !self.isStopped else { return }
+                    if granted {
+                        self.startSession()
+                    } else {
+                        self.showUnavailable("Camera access denied — enable it in Settings")
+                    }
                 }
             }
         default:
@@ -32,6 +40,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     }
 
     private func startSession() {
+        guard !isStopped, !isConfigured else { return }
         guard let device = AVCaptureDevice.default(for: .video),
               let input = try? AVCaptureDeviceInput(device: device),
               session.canAddInput(input) else {
@@ -48,6 +57,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         session.addOutput(output)
         output.setMetadataObjectsDelegate(self, queue: .main)
         output.metadataObjectTypes = [.qr, .ean13, .code128]
+        isConfigured = true
 
         let layer = AVCaptureVideoPreviewLayer(session: session)
         layer.videoGravity = .resizeAspectFill
@@ -55,8 +65,12 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         view.layer.insertSublayer(layer, at: 0)
         previewLayer = layer
 
-        DispatchQueue.global(qos: .userInitiated).async { [session] in
-            session.startRunning()
+        // Starting and stopping share a serial queue so a queued start cannot
+        // restart the camera after the scanner has been closed.
+        sessionQueue.async { [session] in
+            if !session.isRunning {
+                session.startRunning()
+            }
         }
     }
 
@@ -65,12 +79,16 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         let closeButton = UIButton(type: .system)
         closeButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
         closeButton.tintColor = .white
+        closeButton.accessibilityLabel = "Close QR scanner"
+        closeButton.accessibilityHint = "Stops the camera and closes the scanner"
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(closeButton)
         NSLayoutConstraint.activate([
             closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
-            closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
+            closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
 
@@ -81,10 +99,28 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        session.stopRunning()
+        stopSession()
+    }
+
+    private func stopSession() {
+        isStopped = true
+        isConfigured = false
+        sessionQueue.async { [session] in
+            session.stopRunning()
+            for output in session.outputs {
+                (output as? AVCaptureMetadataOutput)?.setMetadataObjectsDelegate(nil, queue: nil)
+                session.removeOutput(output)
+            }
+            for input in session.inputs {
+                session.removeInput(input)
+            }
+        }
+        previewLayer?.removeFromSuperlayer()
+        previewLayer = nil
     }
 
     private func showUnavailable(_ message: String = "Camera unavailable") {
+        stopSession()
         let label = UILabel()
         label.text = message
         label.numberOfLines = 0
@@ -101,6 +137,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
     }
 
     @objc private func closeTapped() {
+        stopSession()
         dismiss(animated: true)
     }
 
@@ -109,15 +146,19 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
         didOutput metadataObjects: [AVMetadataObject],
         from connection: AVCaptureConnection
     ) {
-        guard !fired,
+        guard !isStopped, !fired,
               let object = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
               let value = object.stringValue,
               let url = URL(string: value),
               url.scheme == "http" || url.scheme == "https" else { return }
         fired = true
-        session.stopRunning()
+        stopSession()
         dismiss(animated: true) { [weak self] in
             self?.onURLFound?(url)
         }
+    }
+
+    deinit {
+        stopSession()
     }
 }

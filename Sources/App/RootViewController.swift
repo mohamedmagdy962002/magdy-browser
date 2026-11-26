@@ -1,14 +1,38 @@
 import UIKit
 
 final class RootViewController: UITabBarController {
+    private var themeObserver: NSObjectProtocol?
+    private var languageObserver: NSObjectProtocol?
+
+    deinit {
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+        }
+        if let languageObserver {
+            NotificationCenter.default.removeObserver(languageObserver)
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         overrideUserInterfaceStyle = Theme.forcedStyle
+        view.accessibilityIdentifier = "root-tabs"
+        view.semanticContentAttribute = L.isRightToLeft ? .forceRightToLeft : .forceLeftToRight
 
-        NotificationCenter.default.addObserver(
+        themeObserver = NotificationCenter.default.addObserver(
             forName: .magdyThemeChanged, object: nil, queue: .main
         ) { [weak self] _ in
             self?.overrideUserInterfaceStyle = Theme.forcedStyle
+        }
+        languageObserver = NotificationCenter.default.addObserver(
+            forName: .magdyLanguageChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.view.semanticContentAttribute = L.isRightToLeft ? .forceRightToLeft : .forceLeftToRight
+            let keys = ["browser", "downloads", "media", "favorites", "history", "settings"]
+            for (index, controller) in (self.viewControllers ?? []).enumerated() where index < keys.count {
+                controller.tabBarItem.title = L.t(keys[index])
+            }
         }
 
         let browser = UINavigationController(rootViewController: BrowserViewController())

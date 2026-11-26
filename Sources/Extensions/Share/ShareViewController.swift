@@ -1,7 +1,6 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// "Open in Magdy" — hands a shared URL to the browser.
 final class ShareViewController: UIViewController {
 
     override func viewDidLoad() {
@@ -34,9 +33,20 @@ final class ShareViewController: UIViewController {
     }
 
     private func open(_ text: String) {
-        guard !text.isEmpty,
-              let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "magdy://download?url=\(encoded)") else {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            finish()
+            return
+        }
+        var components = URLComponents()
+        components.scheme = "magdy"
+        components.host = "open"
+        if let destination = URL.webURL(from: trimmed) {
+            components.queryItems = [URLQueryItem(name: "url", value: destination.absoluteString)]
+        } else {
+            components.queryItems = [URLQueryItem(name: "q", value: trimmed)]
+        }
+        guard let url = components.url else {
             finish()
             return
         }

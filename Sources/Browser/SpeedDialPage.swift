@@ -11,7 +11,7 @@ enum SpeedDialPage {
         let color: String
     }
 
-    static func tiles() -> [Tile] {
+    static func tiles(includeHistory: Bool = true) -> [Tile] {
         var result: [Tile] = []
         var seen = Set<String>()
 
@@ -28,12 +28,12 @@ enum SpeedDialPage {
             ))
         }
 
-        for top in HistoryStore.shared.topDomains(limit: 12) where result.count < 16 {
+        for top in includeHistory ? HistoryStore.shared.topDomains(limit: 12) : [] where result.count < 16 {
             guard !seen.contains(top.domain) else { continue }
             seen.insert(top.domain)
             result.append(Tile(
                 title: top.title.isEmpty ? top.domain : top.title,
-                url: "https://\(top.domain)",
+                url: top.urlString,
                 letter: letter(for: top.domain),
                 color: color(for: top.domain)
             ))
@@ -41,8 +41,8 @@ enum SpeedDialPage {
         return result
     }
 
-    static func html() -> String {
-        let tiles = tiles()
+    static func html(includeHistory: Bool = true) -> String {
+        let tiles = tiles(includeHistory: includeHistory)
         let wallpaper = WallpaperStore.shared.materialiseSelection()
         let backgroundStyle: String
         if let wallpaper {
@@ -85,7 +85,7 @@ enum SpeedDialPage {
         }.joined(separator: "\n")
 
         return """
-        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <!doctype html><html lang="\(escape(L.resolvedLanguage))" dir="\(L.isRightToLeft ? "rtl" : "ltr")"><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
           :root{--canvas:#FBF8FF;--canvas-72:rgba(251,248,255,.72);--canvas-92:rgba(251,248,255,.92);
                 --canvas-98:rgba(251,248,255,.98);--text:#1B1B21;--muted:#484553;
@@ -123,19 +123,20 @@ enum SpeedDialPage {
                     font-size:22px;font-weight:800;box-shadow:var(--badge-shadow)}
           .wordmark{font-size:22px;font-weight:200;letter-spacing:.26em;margin-right:-.26em;
                     color:var(--text);text-transform:uppercase}
-          .search-pill{display:flex;align-items:center;gap:7px;padding:8px 16px;border-radius:999px;
+          .search-pill{display:flex;align-items:center;gap:7px;padding:10px 16px;border-radius:999px;
                        background:var(--tile);border:1px solid var(--tile-border);
-                       box-shadow:var(--tile-shadow);color:var(--muted);font-size:13px}
+                       box-shadow:var(--tile-shadow);color:var(--muted);font-size:13px;
+                       font-family:inherit;min-height:44px;cursor:pointer}
           h1{font-size:28px;font-weight:800;letter-spacing:-0.4px;margin:0 0 4px}
           p.note{color:var(--muted);font-size:12px;margin:0 0 14px;text-align:center}
           p.empty{color:var(--muted);font-size:14px;text-align:center;padding:40px 0}
           .qa-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:0 0 18px}
           .qa{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;
               background:var(--tile);border:1px solid var(--tile-border);box-shadow:var(--tile-shadow);
-              font-size:13px;font-weight:600;color:var(--text)}
+              font-size:13px;font-weight:600;color:var(--text);font-family:inherit;min-height:44px}
                     .qa-ico{font-size:15px}
-          .grid{display:flex;flex-wrap:wrap;gap:10px}
-          .tile{width:calc(50% - 5px);background:var(--tile);border:1px solid var(--tile-border);
+          .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr));gap:10px}
+          .tile{min-width:0;background:var(--tile);border:1px solid var(--tile-border);
                 border-radius:14px;padding:10px 12px;box-sizing:border-box;
                 text-decoration:none;color:var(--text);display:flex;align-items:center;gap:10px;
                 box-shadow:var(--tile-shadow)}
@@ -153,7 +154,7 @@ enum SpeedDialPage {
           <div class="hero">
             <span class="monogram">M</span>
             <span class="wordmark">Magdy</span>
-            <span class="search-pill">🔍 Search</span>
+            <button id="start-search" class="search-pill" aria-label="Search" onclick="webkit.messageHandlers.magdyAction.postMessage('search')">🔍 Search</button>
           </div>
           <p class="note">\(escape(L.t("unlimited_note")))</p>
           <div class="qa-row">

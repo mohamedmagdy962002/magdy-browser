@@ -3,13 +3,12 @@ import UIKit
 
 /// Bundled variable typefaces loaded through CoreText, with a system-font fallback.
 /// Inter (body) and Space Grotesk (headlines) match the Stitch design system;
-/// the Noto families cover Latin, Arabic, Japanese, Korean, Simplified and
-/// Traditional Chinese so localised UI text renders with the bundled faces.
+/// the Noto families cover Arabic, Japanese, Korean and Simplified Chinese.
 enum AppFonts {
 
     static let familyNames = [
-        "Inter", "SpaceGrotesk", "NotoSans", "NotoSansArabic",
-        "NotoSansJP", "NotoSansKR", "NotoSansSC", "NotoSansTC"
+        "Inter", "SpaceGrotesk", "NotoSansArabic",
+        "NotoSansJP", "NotoSansKR", "NotoSansSC"
     ]
 
     private static var registered = false
@@ -67,11 +66,12 @@ enum AppFonts {
     /// Body face: Inter, or a Noto family for non-Latin scripts.
     static func body(_ size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
         let family: String
-        switch L.resolvedLanguage {
+        switch L.languageTag {
         case "ar", "fa", "he": family = "NotoSansArabic"
         case "ja": family = "NotoSansJP"
         case "ko": family = "NotoSansKR"
-        case "zh": family = "NotoSansSC"
+        case "zh", "zh-hans": family = "NotoSansSC"
+        case "zh-hant": family = "NotoSansTC"
         default: family = "Inter"
         }
         let custom = font(family, size: size, weight: weight)

@@ -89,11 +89,11 @@ enum Theme {
 
     /// Geometric headline face (Space Grotesk in Stitch -> bundled Space Grotesk / SF Rounded).
     static func headline(_ size: CGFloat, weight: UIFont.Weight = .bold) -> UIFont {
-        AppFonts.headline(size, weight: weight)
+        UIFontMetrics.default.scaledFont(for: AppFonts.headline(size, weight: weight))
     }
 
     static func body(_ size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
-        AppFonts.body(size, weight: weight)
+        UIFontMetrics.default.scaledFont(for: AppFonts.body(size, weight: weight))
     }
 
     // MARK: - Elevation

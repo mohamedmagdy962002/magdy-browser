@@ -30,6 +30,7 @@ final class FavoritesStore {
     }
 
     func add(url: URL, title: String, folder: String? = nil) {
+        guard url.isWebURL else { return }
         let entry = Favorite(
             url: url.absoluteString,
             title: title.isEmpty ? (url.host ?? url.absoluteString) : title,
@@ -41,14 +42,15 @@ final class FavoritesStore {
     }
 
     func add(urlString: String, title: String, folder: String? = nil) {
-        guard let url = URL(string: urlString) else { return }
+        guard let url = FavoritesStore.validatedWebURL(from: urlString) else { return }
         add(url: url, title: title, folder: folder)
     }
 
     func update(at index: Int, title: String, urlString: String, folder: String?) {
-        guard favorites.indices.contains(index), URL(string: urlString) != nil else { return }
+        guard favorites.indices.contains(index),
+              let url = FavoritesStore.validatedWebURL(from: urlString) else { return }
         let trimmed = folder?.trimmingCharacters(in: .whitespaces)
-        favorites[index] = Favorite(url: urlString, title: title, folder: (trimmed?.isEmpty == false) ? trimmed : nil)
+        favorites[index] = Favorite(url: url.absoluteString, title: title, folder: (trimmed?.isEmpty == false) ? trimmed : nil)
         save()
     }
 
@@ -88,10 +90,25 @@ final class FavoritesStore {
         }
     }
 
+    private static func validatedWebURL(from rawValue: String) -> URL? {
+        let text = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if let parsed = URL(string: text), let scheme = parsed.scheme, !scheme.isEmpty {
+            guard scheme.lowercased() == "http" || scheme.lowercased() == "https" else { return nil }
+        } else {
+            // Accept bare hosts such as example.com, but not relative paths.
+            guard !text.hasPrefix("/"), !text.hasPrefix("."), !text.hasPrefix("?"), !text.hasPrefix("#"),
+                  !text.contains("\\"), !text.contains("/../"), !text.hasSuffix("/.."),
+                  text.contains(".") || text.lowercased() == "localhost" || text.hasPrefix("[") else { return nil }
+        }
+        guard let url = URL.webURL(from: text), url.isWebURL else { return nil }
+        return url
+    }
+
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: UserDefaultsKey.favorites),
               let decoded = try? JSONDecoder().decode([Favorite].self, from: data) else { return }
-        favorites = decoded
+        favorites = decoded.filter { URL(string: $0.url)?.isWebURL == true }
     }
 
     private func save() {

@@ -7,14 +7,14 @@ final class SettingsViewController: UITableViewController {
         case blockAds, blockTrackers, strongBlocking, defaultPrivate, clearData, clearCache
         case filterLists, customFilterLists, wallpaper, language, about
         case appLock, nightMode, searchEngine, vault, readingList, blockStats, theme, textZoom
-        case memorySaver, backup, forceZoom, homepage, quickSearch, omniboxPosition
+        case memorySaver, backup, forceZoom, homepage, quickSearch, omniboxPosition, searchSuggestions
     }
 
     private let sections: [(title: String, rows: [Row])] = [
         (L.t("block_ads"), [.blockAds, .blockTrackers, .strongBlocking, .filterLists, .customFilterLists, .blockStats]),
         ("Privacy", [.defaultPrivate, .clearData, .clearCache, .appLock, .vault, .memorySaver, .forceZoom, .backup]),
         ("Appearance", [.theme, .nightMode, .wallpaper, .textZoom]),
-        (L.t("language"), [.language, .searchEngine, .quickSearch, .omniboxPosition, .homepage, .readingList]),
+        (L.t("language"), [.language, .searchEngine, .quickSearch, .omniboxPosition, .homepage, .searchSuggestions, .readingList]),
         (L.t("about"), [.about])
     ]
 
@@ -121,6 +121,9 @@ final class SettingsViewController: UITableViewController {
             cell.accessoryType = .disclosureIndicator
             let stored = UserDefaults.standard.string(forKey: BrowserViewController.homepageURLKey)
             cell.detailTextLabel?.text = stored?.isEmpty == false ? stored : "Default (start page)"
+        case .searchSuggestions:
+            cell.textLabel?.text = "Search Suggestions"
+            cell.accessoryView = makeSwitch(key: UserDefaultsKey.searchSuggestions, default: false)
         case .vault:
             cell.textLabel?.text = "Private Vault"
             cell.accessoryType = .disclosureIndicator
@@ -208,10 +211,11 @@ final class SettingsViewController: UITableViewController {
             let raw = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if raw.isEmpty {
                 UserDefaults.standard.removeObject(forKey: key)
-            } else if let url = URL(string: raw), url.scheme != nil {
+            } else if let url = URL.webURL(from: raw) {
                 UserDefaults.standard.set(url.absoluteString, forKey: key)
-            } else if !raw.hasPrefix("http") {
-                UserDefaults.standard.set("https://\(raw)", forKey: key)
+            } else {
+                self?.showAlert(title: "Invalid homepage", message: "Enter an http or https URL with a valid host.")
+                return
             }
             self?.tableView.reloadData()
         })
@@ -229,6 +233,14 @@ final class SettingsViewController: UITableViewController {
 
     @objc private func switchChanged(_ sender: UISwitch) {
         guard let key = sender.accessibilityIdentifier else { return }
+        if key == AppLock.enabledKey, sender.isOn, !AppLock.canAuthenticate {
+            sender.isOn = false
+            showAlert(
+                title: "App Lock unavailable",
+                message: "Set a device passcode in iOS Settings before enabling App Lock."
+            )
+            return
+        }
         UserDefaults.standard.set(sender.isOn, forKey: key)
         if key == "magdy.nightMode" {
             NotificationCenter.default.post(name: .magdyNightModeChanged, object: sender.isOn)
@@ -243,13 +255,13 @@ final class SettingsViewController: UITableViewController {
             present(alert, animated: true)
             return
         }
-        guard key == UserDefaultsKey.blockAds || key == UserDefaultsKey.blockTrackers else { return }
+        guard key == UserDefaultsKey.blockAds || key == UserDefaultsKey.blockTrackers || key == UserDefaultsKey.strongBlocking else { return }
 
-        // Filter lists are compiled into the web view configuration, so blocking
-        // changes apply to tabs opened after the switch.
+        // Existing tabs observe ContentBlocker and attach or detach these rules live.
+        ContentBlocker.shared.refresh()
         let alert = UIAlertController(
-            title: "Applies to new tabs",
-            message: "Blocking changes apply the next time you open a new tab.",
+            title: "Blocking updated",
+            message: "The change applies to open tabs and new tabs.",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
@@ -266,10 +278,7 @@ final class SettingsViewController: UITableViewController {
             })
         }
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
-        if let popover = sheet.popoverPresentationController {
-            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 0, section: 3))
-        }
-        present(sheet, animated: true)
+        presentActionSheet(sheet, from: IndexPath(row: 0, section: 3))
     }
 
     /// Search bar docked top or bottom — applied live in the browser.
@@ -283,8 +292,14 @@ final class SettingsViewController: UITableViewController {
             self.setPosition(bottom: true)
         })
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
+        presentActionSheet(sheet, from: IndexPath(row: 3, section: 3))
+    }
+
+    private func presentActionSheet(_ sheet: UIAlertController, from indexPath: IndexPath) {
         if let popover = sheet.popoverPresentationController {
-            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 0, section: 3))
+            let source = tableView.cellForRow(at: indexPath) ?? tableView
+            popover.sourceView = source
+            popover.sourceRect = source === tableView ? tableView.bounds : source.bounds
         }
         present(sheet, animated: true)
     }
@@ -305,10 +320,7 @@ final class SettingsViewController: UITableViewController {
             })
         }
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
-        if let popover = sheet.popoverPresentationController {
-            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 0, section: 2))
-        }
-        present(sheet, animated: true)
+        presentActionSheet(sheet, from: IndexPath(row: 0, section: 2))
     }
 
     private func chooseTextZoom() {
@@ -320,10 +332,7 @@ final class SettingsViewController: UITableViewController {
             })
         }
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
-        if let popover = sheet.popoverPresentationController {
-            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 3, section: 2))
-        }
-        present(sheet, animated: true)
+        presentActionSheet(sheet, from: IndexPath(row: 3, section: 2))
     }
 
     private func chooseSearchEngine() {
@@ -338,10 +347,7 @@ final class SettingsViewController: UITableViewController {
             self?.configureCustomEngine()
         })
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
-        if let popover = sheet.popoverPresentationController {
-            popover.sourceView = tableView.cellForRow(at: IndexPath(row: 1, section: 3))
-        }
-        present(sheet, animated: true)
+        presentActionSheet(sheet, from: IndexPath(row: 1, section: 3))
     }
 
     /// Name + URL template (with %s where the query goes).
@@ -352,13 +358,19 @@ final class SettingsViewController: UITableViewController {
         alert.addAction(UIAlertAction(title: "Save", style: .default) { [weak self] _ in
             let name = alert.textFields?[0].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let template = alert.textFields?[1].text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            // Only accept templates that actually contain the query placeholder.
-            guard !name.isEmpty, template.contains("%s"), URL(string: template.replacingOccurrences(of: "%s", with: "test")) != nil else {
-                self?.showAlert(title: "Invalid engine", message: "Enter a name and a URL containing %s")
+            // Only accept templates that actually contain the query placeholder
+            // and resolve to an HTTP(S) URL with a host.
+            let placeholder = "magdySearchQueryPlaceholder"
+            guard !name.isEmpty,
+                  template.contains("%s"),
+                  let url = URL.webURL(from: template.replacingOccurrences(of: "%s", with: placeholder)),
+                  url.isWebURL else {
+                self?.showAlert(title: "Invalid engine", message: "Enter a name and an http or https URL containing %s")
                 return
             }
+            let normalizedTemplate = url.absoluteString.replacingOccurrences(of: placeholder, with: "%s")
             UserDefaults.standard.set(name, forKey: "magdy.customSearchName")
-            UserDefaults.standard.set(template, forKey: "magdy.customSearchURL")
+            UserDefaults.standard.set(normalizedTemplate, forKey: "magdy.customSearchURL")
             UserDefaults.standard.set("custom", forKey: "magdy.searchEngine")
             self?.tableView.reloadData()
         })
@@ -376,26 +388,30 @@ final class SettingsViewController: UITableViewController {
             WKWebsiteDataTypeIndexedDBDatabases
         ]
         WKWebsiteDataStore.default().removeData(ofTypes: types, modifiedSince: date) { [weak self] in
-            HistoryStore.shared.clear()
+            if date == .distantPast {
+                HistoryStore.shared.clear()
+            } else {
+                HistoryStore.shared.remove(olderThan: date)
+            }
             self?.showAlert(title: L.t("done"), message: "Cache, cookies, site data and history cleared.")
         }
     }
 
     private func clearBrowsingDataByRange() {
         let sheet = UIAlertController(title: "Clear Browsing Data", message: nil, preferredStyle: .actionSheet)
-        let ranges: [(String, TimeInterval)] = [
-            ("Last hour", -3600),
-            ("Last 24 hours", -86400),
-            ("Last 7 days", -7 * 86400),
-            ("All time", -1e12)
+        let ranges: [(String, TimeInterval?)] = [
+            ("Older than 1 hour", -3600),
+            ("Older than 24 hours", -86400),
+            ("Older than 7 days", -7 * 86400),
+            ("All time", nil)
         ]
         for (title, interval) in ranges {
             sheet.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
-                self?.clearBrowsingData(since: Date().addingTimeInterval(interval))
+                self?.clearBrowsingData(since: interval.map { Date().addingTimeInterval($0) } ?? .distantPast)
             })
         }
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
-        present(sheet, animated: true)
+        presentActionSheet(sheet, from: IndexPath(row: 0, section: 1))
     }
 
     private func clearCache() {

@@ -1,16 +1,21 @@
 import XCTest
 
-/// Runtime smoke test: launches the app on a real iOS Simulator, taps through
-/// the main screens and writes screenshots to SHOT_DIR for artifact upload.
 final class ScreenshotTests: XCTestCase {
-
+    private let app = XCUIApplication()
     private let shotDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .appendingPathComponent("build/shots")
 
-    private func snap(_ app: XCUIApplication, _ name: String) {
+    override func setUp() {
+        super.setUp()
+        continueAfterFailure = false
+        app.launchEnvironment["MAGDY_UI_TEST"] = "1"
+        app.launch()
+    }
+
+    private func snap(_ name: String) {
         do {
             try FileManager.default.createDirectory(at: shotDirectory, withIntermediateDirectories: true)
             try app.debugDescription.write(
@@ -26,48 +31,74 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    func testCaptureScreens() {
-        let app = XCUIApplication()
-        app.launch()
-        sleep(3)
-        snap(app, "01-start")
-
-        // Dock row: 5 equal slots — tabs button is the 3rd.
-        dock(app, 2)
-        sleep(2)
-        snap(app, "02-tabs-grid")
-
-        // Close the grid (Done bar button) if it appeared.
-        let done = app.buttons["Done"].firstMatch
-        if done.waitForExistence(timeout: 3) {
-            done.tap()
-            sleep(1)
-        }
-
-        // ⋯ menu: 5th slot.
-        dock(app, 4)
-        sleep(1)
-        snap(app, "03-menu")
-
-        // Dismiss by tapping the dimmed backdrop near the top.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
-        sleep(1)
-
-        // Omnibox: focus the address field by element query, not blind taps.
-        let field = app.textFields.firstMatch
-        if field.waitForExistence(timeout: 5) {
-            field.tap()
-            sleep(1)
-            if app.keyboards.firstMatch.exists {
-                app.typeText("magdy.com")
-                sleep(1)
-            }
-        }
-        snap(app, "04-suggestions")
+    private func waitUntilHittable(_ element: XCUIElement, timeout: TimeInterval = 10) {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true && isHittable == true"),
+            object: element
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: timeout), .completed)
     }
 
-    private func dock(_ app: XCUIApplication, _ slot: Int) {
-        let x = (Double(slot) + 0.5) / 5.0
-        app.coordinate(withNormalizedOffset: CGVector(dx: x, dy: 0.925)).tap()
+    func testCaptureScreens() {
+        waitUntilHittable(app.buttons["download-video"])
+        XCTAssertTrue(app.staticTexts["MAGDY"].waitForExistence(timeout: 10))
+        snap("01-start")
+
+        waitUntilHittable(app.buttons["browser-tabs"])
+        app.buttons["browser-tabs"].tap()
+        waitUntilHittable(app.buttons["tab-grid-done"])
+        XCTAssertTrue(app.navigationBars["Tabs"].exists)
+        snap("02-tabs-grid")
+
+        app.buttons["tab-grid-done"].tap()
+        waitUntilHittable(app.buttons["browser-menu"])
+        app.buttons["browser-menu"].tap()
+        waitUntilHittable(app.buttons["menu-close"])
+        XCTAssertTrue(app.tables.firstMatch.exists)
+        snap("03-menu")
+
+        app.buttons["menu-close"].tap()
+        waitUntilHittable(app.textFields["address-field"])
+        app.buttons["Search"].tap()
+        waitUntilHittable(app.keyboards.firstMatch)
+        app.textFields["address-field"].typeText("magdy")
+
+        let suggestions = app.tables["search-suggestions"]
+        waitUntilHittable(suggestions, timeout: 20)
+        XCTAssertGreaterThan(suggestions.cells.count, 0)
+        snap("04-suggestions")
+    }
+
+    func testTabLifecycleAndPrivateSuggestions() {
+        waitUntilHittable(app.buttons["download-video"])
+        let tabButton = app.buttons["browser-tabs"]
+        XCTAssertEqual(tabButton.value as? String, "1")
+
+        app.buttons["browser-new-tab"].tap()
+        let opened = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "2"), object: tabButton)
+        XCTAssertEqual(XCTWaiter.wait(for: [opened], timeout: 10), .completed)
+        XCTAssertEqual(tabButton.value as? String, "2")
+
+        tabButton.tap()
+        waitUntilHittable(app.buttons["tab-grid-done"])
+        let closeButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tab-close-"))
+        XCTAssertEqual(closeButtons.count, 2)
+        closeButtons.firstMatch.tap()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == 1"), object: closeButtons)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 10), .completed)
+        XCTAssertEqual(closeButtons.count, 1)
+
+        app.buttons["tab-grid-done"].tap()
+        waitUntilHittable(app.buttons["browser-menu"])
+        app.buttons["browser-menu"].tap()
+        waitUntilHittable(app.cells["menu-item-2"])
+        app.cells["menu-item-2"].tap()
+        waitUntilHittable(app.buttons["download-video"])
+        XCTAssertEqual(tabButton.value as? String, "1")
+
+        app.textFields["address-field"].tap()
+        waitUntilHittable(app.keyboards.firstMatch)
+        app.textFields["address-field"].typeText("magdy")
+        XCTAssertFalse(app.tables["search-suggestions"].isHittable)
     }
 }

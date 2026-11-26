@@ -38,10 +38,16 @@ final class VideoPlayerController: UIViewController {
     private let speedButton = UIButton(type: .system)
     private let routePicker = AVRoutePickerView()
     private var timeObserver: Any?
+    private var itemStatusObserver: NSKeyValueObservation?
+    private var endObserver: NSObjectProtocol?
+    private var failureObserver: NSObjectProtocol?
     private var isScrubbing = false
+    private var isTouchScrubbing = false
+    private var scrubCommitWorkItem: DispatchWorkItem?
     private var rate: Float
     private var hideTimer: Timer?
     private var errorShown = false
+    private var ownsAudioSession = false
     private let reusedPlayer: AVPlayer?
     // Stored so the gesture delegate can tell them apart.
     private var tapGesture: UITapGestureRecognizer!
@@ -76,15 +82,39 @@ final class VideoPlayerController: UIViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        // Intentionally empty: presenting a sheet (download options, share) over
-        // the player also lands here — pausing or tearing down the time observer
-        // would freeze the scrubber and kill the audio. Cleanup lives in deinit.
+        // Covering the player with a sheet leaves it in the presentation chain.
+        // Only a real dismissal relinquishes this controller's playback duties.
+        guard isBeingDismissed || (view.window == nil && parent == nil && presentingViewController == nil) else { return }
+        tearDownPlayback()
     }
 
     deinit {
+        tearDownPlayback()
+    }
+
+    private func tearDownPlayback() {
+        hideTimer?.invalidate()
+        hideTimer = nil
+        scrubCommitWorkItem?.cancel()
+        scrubCommitWorkItem = nil
         if let timeObserver {
             player.removeTimeObserver(timeObserver)
+            self.timeObserver = nil
         }
+        itemStatusObserver?.invalidate()
+        itemStatusObserver = nil
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+            self.endObserver = nil
+        }
+        if let failureObserver {
+            NotificationCenter.default.removeObserver(failureObserver)
+            self.failureObserver = nil
+        }
+        guard PlayerSession.shared.player !== player,
+              pipController?.isPictureInPictureActive != true else { return }
+        player.pause()
+        deactivateAudioSessionIfOwned()
     }
 
     // MARK: - Setup
@@ -141,7 +171,11 @@ final class VideoPlayerController: UIViewController {
             return button
         }
         closeButton = topIcon("xmark", selector: #selector(closeTapped))
+        closeButton.accessibilityLabel = "Close video player"
+        closeButton.accessibilityHint = "Closes the player while retaining eligible background playback"
         shareButton = topIcon("square.and.arrow.up", selector: #selector(shareTapped))
+        shareButton.accessibilityLabel = "Share video"
+        shareButton.accessibilityHint = "Opens sharing options for this video"
 
         // Aloha reference: one glass pill holding ✕ · centered title · share.
         // Equal-width spacers keep the title exactly centered.
@@ -176,8 +210,22 @@ final class VideoPlayerController: UIViewController {
             return button
         }
         skipBackButton = transport("gobackward.10", selector: #selector(skipBackTapped), size: 30)
+        skipBackButton.accessibilityLabel = "Rewind 10 seconds"
+        skipBackButton.accessibilityHint = "Moves playback backward by 10 seconds"
         playButton = transport("pause.fill", selector: #selector(togglePlayback), size: 44)
+        playButton.accessibilityLabel = "Pause video"
+        playButton.accessibilityHint = "Pauses playback"
         skipForwardButton = transport("goforward.10", selector: #selector(skipForwardTapped), size: 30)
+        skipForwardButton.accessibilityLabel = "Forward 10 seconds"
+        skipForwardButton.accessibilityHint = "Moves playback forward by 10 seconds"
+        NSLayoutConstraint.activate([
+            skipBackButton.widthAnchor.constraint(equalToConstant: 44),
+            skipBackButton.heightAnchor.constraint(equalToConstant: 44),
+            playButton.widthAnchor.constraint(equalToConstant: 44),
+            playButton.heightAnchor.constraint(equalToConstant: 44),
+            skipForwardButton.widthAnchor.constraint(equalToConstant: 44),
+            skipForwardButton.heightAnchor.constraint(equalToConstant: 44)
+        ])
 
         centerRow = UIStackView(arrangedSubviews: [skipBackButton, playButton, skipForwardButton])
         centerRow.axis = .horizontal
@@ -205,8 +253,14 @@ final class VideoPlayerController: UIViewController {
         scrubber.minimumTrackTintColor = Theme.primary
         scrubber.maximumTrackTintColor = UIColor.white.withAlphaComponent(0.25)
         scrubber.thumbTintColor = .white
-        scrubber.addTarget(self, action: #selector(scrubStarted), for: .valueChanged)
-        scrubber.addTarget(self, action: #selector(scrubEnded), for: .valueChanged)
+        scrubber.accessibilityLabel = "Playback position"
+        scrubber.accessibilityHint = "Swipe up or down to seek through the video"
+        scrubber.addTarget(self, action: #selector(scrubStarted), for: .touchDown)
+        scrubber.addTarget(self, action: #selector(scrubValueChanged), for: .valueChanged)
+        scrubber.addTarget(
+            self, action: #selector(scrubEnded),
+            for: [.touchUpInside, .touchUpOutside, .touchCancel]
+        )
 
         let timeRow = UIStackView(arrangedSubviews: [currentLabel, scrubber, durationLabel])
         timeRow.axis = .horizontal
@@ -230,9 +284,13 @@ final class VideoPlayerController: UIViewController {
 
         pipButton.setImage(UIImage(systemName: "pip.enter"), for: .normal)
         pipButton.tintColor = .white
+        pipButton.accessibilityLabel = "Picture in Picture"
+        pipButton.accessibilityHint = "Shows the video in a floating window when supported"
         pipButton.addTarget(self, action: #selector(pipTapped), for: .touchUpInside)
 
         speedButton.setTitle(String(format: "%.2g×", rate), for: .normal)
+        speedButton.accessibilityLabel = "Playback speed"
+        speedButton.accessibilityHint = "Opens playback speed options"
         speedButton.setTitleColor(.white, for: .normal)
         speedButton.titleLabel?.font = Theme.headline(14, weight: .bold)
         speedButton.showsMenuAsPrimaryAction = true
@@ -241,12 +299,16 @@ final class VideoPlayerController: UIViewController {
         routePicker.tintColor = .white
         routePicker.activeTintColor = Theme.primary
         routePicker.prioritizesVideoDevices = true
+        routePicker.accessibilityLabel = "Audio output"
+        routePicker.accessibilityHint = "Chooses where video audio plays"
 
         // ⋯ opens pause/resume/cancel for a running download, or the options sheet.
         let moreButton = UIButton(type: .system)
         moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
         moreButton.tintColor = .white
         moreButton.showsMenuAsPrimaryAction = true
+        moreButton.accessibilityLabel = "More video options"
+        moreButton.accessibilityHint = "Opens download, frame capture, and sharing options"
         moreButton.menu = UIMenu(children: [
             UIAction(title: "Download Options…", image: UIImage(systemName: "slider.horizontal.3")) { [weak self] _ in
                 guard let self else { return }
@@ -304,9 +366,11 @@ final class VideoPlayerController: UIViewController {
             titleStack.trailingAnchor.constraint(equalTo: topBar.trailingAnchor),
             titleStack.bottomAnchor.constraint(equalTo: topBar.bottomAnchor),
 
-            closeButton.widthAnchor.constraint(equalToConstant: 34),
-            shareButton.widthAnchor.constraint(equalToConstant: 34),
-            titleStack.heightAnchor.constraint(equalToConstant: 46),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
+            shareButton.widthAnchor.constraint(equalToConstant: 44),
+            shareButton.heightAnchor.constraint(equalToConstant: 44),
+            titleStack.heightAnchor.constraint(equalToConstant: 60),
 
             centerRow.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             centerRow.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -40),
@@ -322,18 +386,37 @@ final class VideoPlayerController: UIViewController {
     }
 
     private func preparePlayer() {
-        // Audio keeps playing over the lock screen and other apps' music.
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
-        try? AVAudioSession.sharedInstance().setActive(true)
         let item: AVPlayerItem
-        if reusedPlayer != nil, player.currentItem != nil {
+        if reusedPlayer != nil, let currentItem = player.currentItem {
             // Session player reopened from the banner — keep playing seamlessly.
-            item = player.currentItem!
+            item = currentItem
         } else {
-            item = AVPlayerItem(url: url)
+            if let reason = unsupportedStreamReason() {
+                player.pause()
+                playButton.isEnabled = false
+                playButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
+                playButton.accessibilityLabel = "Play video"
+                pipButton.isEnabled = false
+                toast(reason)
+                return
+            }
+            item = AVPlayerItem(asset: makePlayerAsset())
             player.replaceCurrentItem(with: item)
         }
+        if item.status == .failed || player.error != nil {
+            handlePlaybackFailure(item.error ?? player.error)
+            return
+        }
+
         player.defaultRate = rate
+        // Audio keeps playing over the lock screen and other apps' music.
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            try AVAudioSession.sharedInstance().setActive(true)
+            ownsAudioSession = true
+        } catch {
+            // AVPlayer may still activate its own session; playback can proceed.
+        }
         // Local files resume where you left off.
         if isLocal {
             let saved = UserDefaults.standard.double(forKey: "magdy.playback.\(url.path)")
@@ -342,7 +425,27 @@ final class VideoPlayerController: UIViewController {
                 toast("Resumed at \(Self.format(saved))")
             }
         }
-        player.play()
+
+        itemStatusObserver = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
+            guard observedItem.status == .failed else { return }
+            DispatchQueue.main.async {
+                guard let self, self.player.currentItem === observedItem else { return }
+                self.handlePlaybackFailure(observedItem.error)
+            }
+        }
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.player.currentItem === item else { return }
+            self.handlePlaybackEnd()
+        }
+        failureObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
+        ) { [weak self] notification in
+            guard let self, self.player.currentItem === item else { return }
+            let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            self.handlePlaybackFailure(error)
+        }
 
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.4, preferredTimescale: 600),
@@ -353,16 +456,16 @@ final class VideoPlayerController: UIViewController {
                 self.scrubber.value = Float(time.seconds)
             }
             self.currentLabel.text = Self.format(time.seconds)
+            self.scrubber.accessibilityValue = Self.format(time.seconds)
             if let duration = self.player.currentItem?.duration.seconds, duration.isFinite {
                 self.scrubber.maximumValue = Float(duration)
                 self.durationLabel.text = Self.format(duration)
             }
             // Download % rides on the same tick (DownloadsViewController owns onChange).
             self.refreshDownloadPill()
-            // Surface stream failures (DRM / blob / 403) instead of a black screen.
-            if let error = self.player.currentItem?.error, !self.errorShown {
-                self.errorShown = true
-                self.toast("Stream error: \(error.localizedDescription). Try the Media Tools scanner.")
+            // Surface stream failures (DRM / 403) instead of a black screen.
+            if let error = self.player.currentItem?.error {
+                self.handlePlaybackFailure(error)
             }
             // Remember playback position for local files.
             if self.isLocal, time.seconds.isFinite {
@@ -380,6 +483,77 @@ final class VideoPlayerController: UIViewController {
             pipController = AVPictureInPictureController(playerLayer: playerLayer)
             pipController?.canStartPictureInPictureAutomaticallyFromInline = true
         }
+        player.play()
+    }
+
+    private func unsupportedStreamReason() -> String? {
+        if url.scheme?.lowercased() == "blob" {
+            return "Blob video URLs are temporary and cannot be played here. Try Media Tools."
+        }
+        let fileExtension = url.pathExtension.lowercased()
+        if fileExtension == "mpd" {
+            return "DASH streams are not supported by the built-in player. Try Media Tools."
+        }
+        if fileExtension == "mkv" {
+            return "MKV streams are not supported by the built-in player. Try Media Tools."
+        }
+        if !isLocal, !["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") {
+            return "This video URL is not supported by the built-in player. Try Media Tools."
+        }
+        return nil
+    }
+
+    private func makePlayerAsset() -> AVURLAsset {
+        guard !isLocal, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+            return AVURLAsset(url: url)
+        }
+        let applicableCookies = cookies
+            .filter { $0.applies(to: url) }
+            .sorted { $0.path.count > $1.path.count }
+        guard !applicableCookies.isEmpty else { return AVURLAsset(url: url) }
+        return AVURLAsset(
+            url: url,
+            options: [AVURLAssetHTTPCookiesKey: applicableCookies]
+        )
+    }
+
+    private func deactivateAudioSessionIfOwned() {
+        guard ownsAudioSession else { return }
+        ownsAudioSession = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func handlePlaybackEnd() {
+        player.pause()
+        if isLocal {
+            UserDefaults.standard.set(0, forKey: "magdy.playback.\(url.path)")
+        }
+        playButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
+        playButton.accessibilityLabel = "Play video"
+        playButton.accessibilityHint = "Resumes or restarts playback"
+        if PlayerSession.shared.player === player {
+            PlayerSession.shared.stop()
+            ownsAudioSession = false
+        } else if pipController?.isPictureInPictureActive != true {
+            deactivateAudioSessionIfOwned()
+        }
+    }
+
+    private func handlePlaybackFailure(_ error: Error?) {
+        guard !errorShown else { return }
+        errorShown = true
+        player.pause()
+        playButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
+        playButton.accessibilityLabel = "Play video"
+        playButton.accessibilityHint = "Retries playback"
+        if PlayerSession.shared.player === player {
+            PlayerSession.shared.stop()
+            ownsAudioSession = false
+        } else if pipController?.isPictureInPictureActive != true {
+            deactivateAudioSessionIfOwned()
+        }
+        let detail = error?.localizedDescription ?? "This stream could not be played"
+        toast("Stream error: \(detail). Try the Media Tools scanner.")
     }
 
     override func viewDidLayoutSubviews() {
@@ -421,9 +595,13 @@ final class VideoPlayerController: UIViewController {
         if player.timeControlStatus == .playing {
             player.pause()
             playButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
+            playButton.accessibilityLabel = "Play video"
+            playButton.accessibilityHint = "Resumes playback"
         } else {
             player.playImmediately(atRate: rate)
             playButton.setImage(UIImage(systemName: "pause.fill"), for: .normal)
+            playButton.accessibilityLabel = "Pause video"
+            playButton.accessibilityHint = "Pauses playback"
         }
         setControlsHidden(false)
     }
@@ -439,16 +617,35 @@ final class VideoPlayerController: UIViewController {
 
     @objc private func closeTapped() {
         hideTimer?.invalidate()
-        if !isLocal && player.timeControlStatus == .playing {
+        let pictureInPictureIsActive = pipController?.isPictureInPictureActive == true
+        let canRetainPlayback = !isLocal
+            && player.timeControlStatus == .playing
+            && player.currentItem?.status == .readyToPlay
+            && player.currentItem?.error == nil
+            && player.error == nil
+        if canRetainPlayback {
             // Keep audio going; the browser shows the "Video is playing" banner.
             PlayerSession.shared.adopt(player, url: url, title: pageTitle, cookies: cookies)
         } else {
             player.pause()
+            if PlayerSession.shared.player === player {
+                PlayerSession.shared.stop(deactivateAudioSession: !pictureInPictureIsActive)
+                ownsAudioSession = false
+            } else if !pictureInPictureIsActive {
+                deactivateAudioSessionIfOwned()
+            }
         }
-        // Belt and suspenders: dismissing self can no-op if the presentation
-        // state is unusual, so fall back to the presenter.
-        dismiss(animated: true, completion: nil)
-        presentingViewController?.dismiss(animated: true, completion: nil)
+        dismissPlayer()
+    }
+
+    private func dismissPlayer() {
+        guard !isBeingDismissed, let presenter = presentingViewController else { return }
+        dismiss(animated: true) { [weak self] in
+            // Only fall back when this presentation is still on screen. Calling
+            // the presenter unconditionally can dismiss an unrelated screen.
+            guard let self, self.view.window != nil else { return }
+            presenter.dismiss(animated: true, completion: nil)
+        }
     }
 
     @objc private func swipeDownClose(_ gesture: UIPanGestureRecognizer) {
@@ -466,15 +663,41 @@ final class VideoPlayerController: UIViewController {
             } else {
                 UIView.animate(withDuration: 0.25) { self.view.transform = .identity }
             }
+        } else if gesture.state == .cancelled || gesture.state == .failed {
+            UIView.animate(withDuration: 0.25) { self.view.transform = .identity }
         }
     }
 
     @objc private func scrubStarted() {
         isScrubbing = true
+        isTouchScrubbing = true
+        scrubCommitWorkItem?.cancel()
         hideTimer?.invalidate()
     }
 
+    @objc private func scrubValueChanged() {
+        // Accessibility adjustments can arrive without a touch-down. Keep the
+        // preview stable and commit after adjustments settle, not per change.
+        isScrubbing = true
+        hideTimer?.invalidate()
+        currentLabel.text = Self.format(Double(scrubber.value))
+        scrubber.accessibilityValue = Self.format(Double(scrubber.value))
+        guard !isTouchScrubbing else { return }
+        scrubCommitWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.commitScrub() }
+        scrubCommitWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
     @objc private func scrubEnded() {
+        scrubCommitWorkItem?.cancel()
+        scrubCommitWorkItem = nil
+        isTouchScrubbing = false
+        commitScrub()
+    }
+
+    private func commitScrub() {
+        guard isScrubbing else { return }
         isScrubbing = false
         player.seek(to: CMTime(seconds: Double(scrubber.value), preferredTimescale: 600))
         setControlsHidden(false)
@@ -566,14 +789,18 @@ final class VideoPlayerController: UIViewController {
                     self.toast("Frame grab is not supported for this stream")
                     return
                 }
-                let output = DownloadManager.shared.directory
-                    .appendingPathComponent("frame-\(Int(Date().timeIntervalSince1970)).jpg")
+                let folder = DownloadManager.shared.directory
+                let name = DownloadDestinationAllocator.availableName(
+                    "frame-\(Int(Date().timeIntervalSince1970)).jpg", in: folder, reserve: true
+                )
+                let output = folder.appendingPathComponent(name)
+                defer { DownloadDestinationAllocator.release(output) }
                 guard let data = frame.jpegData(compressionQuality: 0.92) else {
                     self.toast("Could not encode the frame")
                     return
                 }
                 do {
-                    try data.write(to: output)
+                    try data.write(to: output, options: .atomic)
                     self.toast("Frame saved to Downloads")
                 } catch {
                     self.toast("Could not save the frame")

@@ -15,6 +15,7 @@ final class GlassMenuSheet: UIViewController, UITableViewDataSource, UITableView
 
     private let items: [GlassMenuItem]
     private let table = UITableView(frame: .zero, style: .plain)
+    private var panelHeight: NSLayoutConstraint!
 
     init(items: [GlassMenuItem]) {
         self.items = items
@@ -30,6 +31,8 @@ final class GlassMenuSheet: UIViewController, UITableViewDataSource, UITableView
 
         let dim = UIButton(type: .system)
         dim.backgroundColor = UIColor.black.withAlphaComponent(0.30)
+        dim.accessibilityIdentifier = "menu-backdrop"
+        dim.accessibilityLabel = "Close menu"
         dim.addTarget(self, action: #selector(close), for: .touchUpInside)
         dim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(dim)
@@ -38,17 +41,30 @@ final class GlassMenuSheet: UIViewController, UITableViewDataSource, UITableView
         panel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(panel)
 
+        let closeButton = UIButton(type: .system)
+        closeButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+        closeButton.tintColor = Theme.textSecondary
+        closeButton.accessibilityIdentifier = "menu-close"
+        closeButton.accessibilityLabel = "Close menu"
+        closeButton.addTarget(self, action: #selector(close), for: .touchUpInside)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        panel.contentView.addSubview(closeButton)
+
         table.backgroundColor = .clear
         table.separatorStyle = .none
         table.alwaysBounceVertical = false
-        table.rowHeight = 52
+        table.rowHeight = UITableView.automaticDimension
+        table.estimatedRowHeight = 52
         table.register(MenuRowCell.self, forCellReuseIdentifier: "menuRow")
         table.dataSource = self
         table.delegate = self
         table.translatesAutoresizingMaskIntoConstraints = false
         panel.contentView.addSubview(table)
 
-        let height = min(CGFloat(items.count) * 52 + 12, 480)
+        let availableHeight = max(180, view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom - 24)
+        let height = min(CGFloat(items.count) * 52 + 48, availableHeight, 480)
+        panelHeight = panel.heightAnchor.constraint(equalToConstant: height)
+        panelHeight.isActive = true
 
         NSLayoutConstraint.activate([
             dim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -59,14 +75,24 @@ final class GlassMenuSheet: UIViewController, UITableViewDataSource, UITableView
             panel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             panel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
             panel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
-            panel.heightAnchor.constraint(equalToConstant: height),
+
+            closeButton.topAnchor.constraint(equalTo: panel.contentView.topAnchor, constant: 4),
+            closeButton.trailingAnchor.constraint(equalTo: panel.contentView.trailingAnchor, constant: -8),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
 
             table.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor),
             table.trailingAnchor.constraint(equalTo: panel.contentView.trailingAnchor),
-            table.topAnchor.constraint(equalTo: panel.contentView.topAnchor, constant: 6),
-            table.bottomAnchor.constraint(equalTo: panel.contentView.bottomAnchor)
+            table.topAnchor.constraint(equalTo: panel.contentView.topAnchor, constant: 44),
+            table.bottomAnchor.constraint(equalTo: panel.contentView.bottomAnchor, constant: -4)
         ])
-        table.isScrollEnabled = items.count > 8
+        table.isScrollEnabled = true
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let availableHeight = max(180, view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom - 24)
+        panelHeight.constant = min(CGFloat(items.count) * 52 + 48, availableHeight, 480)
     }
 
     @objc private func close() { dismiss(animated: true) }
@@ -78,6 +104,7 @@ final class GlassMenuSheet: UIViewController, UITableViewDataSource, UITableView
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "menuRow", for: indexPath) as! MenuRowCell
         cell.configure(items[indexPath.row], showSeparator: indexPath.row < items.count - 1)
+        cell.accessibilityIdentifier = "menu-item-\(indexPath.row)"
         return cell
     }
 
@@ -111,6 +138,8 @@ final class MenuRowCell: UITableViewCell {
         tile.addSubview(iconView)
 
         titleLabel.font = Theme.body(15)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.numberOfLines = 0
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(titleLabel)
 
@@ -132,6 +161,8 @@ final class MenuRowCell: UITableViewCell {
             titleLabel.leadingAnchor.constraint(equalTo: tile.trailingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -14),
             titleLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            titleLabel.topAnchor.constraint(greaterThanOrEqualTo: contentView.topAnchor, constant: 8),
+            titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -8),
 
             separator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 56),
             separator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),

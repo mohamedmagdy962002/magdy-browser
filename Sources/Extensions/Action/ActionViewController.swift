@@ -1,7 +1,6 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// "Search in Magdy" — action extension that sends shared text to the browser's search.
 final class ActionViewController: UIViewController {
 
     override func viewDidLoad() {
@@ -34,9 +33,20 @@ final class ActionViewController: UIViewController {
     }
 
     private func open(_ text: String) {
-        guard !text.isEmpty,
-              let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "magdy://open?q=\(encoded)") else {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            finish()
+            return
+        }
+        var components = URLComponents()
+        components.scheme = "magdy"
+        components.host = "open"
+        if let destination = URL.webURL(from: trimmed) {
+            components.queryItems = [URLQueryItem(name: "url", value: destination.absoluteString)]
+        } else {
+            components.queryItems = [URLQueryItem(name: "q", value: trimmed)]
+        }
+        guard let url = components.url else {
             finish()
             return
         }

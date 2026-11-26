@@ -8,6 +8,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private let store = TabStore()
     private var activeTab: BrowserTab?
+    private var videoPresentationID = UUID()
 
     private let omnibox = UIView()
     private let webContainer = UIView()
@@ -42,6 +43,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.accessibilityIdentifier = "browser-screen"
+        navigationController?.setNavigationBarHidden(true, animated: false)
         view.backgroundColor = .systemBackground
         buildUI()
         openNewTab(privateMode: UserDefaultsKey.bool(UserDefaultsKey.defaultPrivate, default: false))
@@ -69,6 +72,11 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         }
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+    }
+
     deinit {
         if let openURLObserver {
             NotificationCenter.default.removeObserver(openURLObserver)
@@ -78,6 +86,15 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         }
         if let nightModeObserver {
             NotificationCenter.default.removeObserver(nightModeObserver)
+        }
+        if let bannerObserver {
+            NotificationCenter.default.removeObserver(bannerObserver)
+        }
+        if let downloadsObserver {
+            NotificationCenter.default.removeObserver(downloadsObserver)
+        }
+        if let omniboxObserver {
+            NotificationCenter.default.removeObserver(omniboxObserver)
         }
     }
 
@@ -95,6 +112,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         addressField.autocapitalizationType = .none
         addressField.clearButtonMode = .whileEditing
         addressField.delegate = self
+        addressField.accessibilityIdentifier = "address-field"
+        addressField.accessibilityLabel = L.t("search_placeholder")
         addressField.font = Theme.body(16, weight: .medium)
         addressField.textColor = Theme.textPrimary
         addressField.backgroundColor = .clear
@@ -107,7 +126,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         reloadButton.setImage(UIImage(systemName: "arrow.clockwise"), for: .normal)
         reloadButton.tintColor = Theme.textSecondary
         reloadButton.addTarget(self, action: #selector(reloadTapped), for: .touchUpInside)
-        reloadButton.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        reloadButton.accessibilityIdentifier = "browser-reload"
+        reloadButton.accessibilityLabel = "Reload page"
+        reloadButton.widthAnchor.constraint(equalToConstant: 44).isActive = true
 
         addressRow.addArrangedSubview(addressField)
         addressRow.addArrangedSubview(reloadButton)
@@ -127,12 +148,18 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         backButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
         backButton.tintColor = Theme.textPrimary
         backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
+        backButton.accessibilityIdentifier = "browser-back"
+        backButton.accessibilityLabel = "Back"
         forwardButton.setImage(UIImage(systemName: "chevron.right"), for: .normal)
         forwardButton.tintColor = Theme.textPrimary
         forwardButton.addTarget(self, action: #selector(forwardTapped), for: .touchUpInside)
+        forwardButton.accessibilityIdentifier = "browser-forward"
+        forwardButton.accessibilityLabel = "Forward"
         tabButton.setImage(UIImage(systemName: "square.on.square"), for: .normal)
         tabButton.tintColor = Theme.textPrimary
         tabButton.addTarget(self, action: #selector(tabsTapped), for: .touchUpInside)
+        tabButton.accessibilityIdentifier = "browser-tabs"
+        tabButton.accessibilityLabel = "Show tabs"
 
         // Periwinkle glass accent circle for "new tab" (Stitch Liquid ref).
         let newTabButton = UIButton(type: .system)
@@ -142,11 +169,15 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         newTabButton.layer.cornerRadius = 15
         newTabButton.layer.cornerCurve = .continuous
         newTabButton.addTarget(self, action: #selector(newTabTapped), for: .touchUpInside)
+        newTabButton.accessibilityIdentifier = "browser-new-tab"
+        newTabButton.accessibilityLabel = L.t("new_tab")
 
         let menuButton = self.menuButton
         menuButton.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
         menuButton.tintColor = Theme.primary
         menuButton.addTarget(self, action: #selector(menuTapped), for: .touchUpInside)
+        menuButton.accessibilityIdentifier = "browser-menu"
+        menuButton.accessibilityLabel = "More options"
 
         toolbar.addArrangedSubview(backButton)
         toolbar.addArrangedSubview(forwardButton)
@@ -165,6 +196,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         downloadFAB.layer.cornerCurve = .continuous
         downloadFAB.contentEdgeInsets = UIEdgeInsets(top: 12, left: 18, bottom: 12, right: 20)
         downloadFAB.addTarget(self, action: #selector(openVideoDownloader), for: .touchUpInside)
+        downloadFAB.accessibilityIdentifier = "download-video"
+        downloadFAB.accessibilityLabel = "Download video"
         downloadFAB.translatesAutoresizingMaskIntoConstraints = false
         downloadFAB.isHidden = true
 
@@ -221,6 +254,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         suggestionsTable.register(UITableViewCell.self, forCellReuseIdentifier: "suggestion")
         suggestionsTable.dataSource = self
         suggestionsTable.delegate = self
+        suggestionsTable.accessibilityIdentifier = "search-suggestions"
         suggestionsTable.isHidden = true
         suggestionsGlass.isHidden = true
         suggestionsTable.translatesAutoresizingMaskIntoConstraints = false
@@ -263,7 +297,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             addressRow.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor, constant: 8),
             addressRow.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: -8),
             addressRow.centerYAnchor.constraint(equalTo: omnibox.centerYAnchor),
-            addressRow.heightAnchor.constraint(equalToConstant: 36),
+            addressRow.heightAnchor.constraint(equalToConstant: 44),
 
             downloadFAB.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             downloadFAB.heightAnchor.constraint(equalToConstant: 48),
@@ -455,7 +489,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let homepage = GlassMenuItem(title: "Homepage", image: UIImage(systemName: "house"), destructive: false) { [weak self] in
             guard let self,
                   let raw = UserDefaults.standard.string(forKey: BrowserViewController.homepageURLKey),
-                  let url = URL(string: raw) else { return }
+                  let url = URL.webURL(from: raw) else { return }
             self.open(url: url, privateMode: false)
         }
         var items: [GlassMenuItem] = [
@@ -490,7 +524,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             })
         }
         sheet.addAction(UIAlertAction(title: L.t("cancel"), style: .cancel))
-        sheet.popoverPresentationController?.sourceView = view
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+        }
         present(sheet, animated: true)
     }
 
@@ -557,6 +594,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private func presentVideoPlayer(url: URL, title: String) {
         let name = title.isEmpty ? url.host ?? "Video" : title
+        videoPresentationID = UUID()
+        let requestID = videoPresentationID
         // Different video while one is playing in the background? Stop the old
         // session first — otherwise two audio streams overlap.
         if let sessionPlayer = PlayerSession.shared.player,
@@ -564,16 +603,20 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             sessionPlayer.pause()
             PlayerSession.shared.stop()
         }
-        // Reopen seamlessly when this is the session's own video (banner → expand).
-        let reuse = PlayerSession.shared.url?.absoluteString == url.absoluteString
-            ? PlayerSession.shared.player : nil
         // Site cookies ride along so authenticated streams download correctly.
         activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            let player = VideoPlayerController(
-                url: url, title: name, cookies: cookies, existingPlayer: reuse
-            )
-            player.modalPresentationStyle = .fullScreen
-            self?.present(player, animated: true)
+            DispatchQueue.main.async {
+                guard let self, self.videoPresentationID == requestID else { return }
+                // Revalidate after the asynchronous cookie read: the session may
+                // have stopped or switched videos while this request was pending.
+                let reuse = PlayerSession.shared.url?.absoluteString == url.absoluteString
+                    ? PlayerSession.shared.player : nil
+                let player = VideoPlayerController(
+                    url: url, title: name, cookies: cookies, existingPlayer: reuse
+                )
+                player.modalPresentationStyle = .fullScreen
+                self.present(player, animated: true)
+            }
         }
     }
 
@@ -581,7 +624,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     /// Generates a QR code image of the current page URL and opens the share sheet.
     private func sharePageQRCode() {
-        guard let url = activeTab?.webView.url else { return }
+        guard let url = activeTab?.webView.url, url.isWebURL else { return }
         guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return }
         filter.setValue(url.absoluteString.data(using: .utf8), forKey: "inputMessage")
         filter.setValue("M", forKey: "inputCorrectionLevel")
@@ -603,7 +646,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             return
         }
         let sheet = UIActivityViewController(activityItems: [file], applicationActivities: nil)
-        sheet.popoverPresentationController?.sourceView = view
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+        }
         present(sheet, animated: true)
     }
 
@@ -691,6 +737,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     }
 
     private func activate(_ tab: BrowserTab) {
+        store.persist()
         activeTab?.webView.removeFromSuperview()
         activeTab = tab
         tab.lastActivatedAt = Date()
@@ -719,10 +766,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             self.progressBar.isHidden = progress >= 1 || progress == 0
             self.progressBar.setProgress(Float(progress), animated: true)
         }
-        tab.onVideoTapped = { [weak self] url, title in
-            guard let self else { return }
+        tab.onVideoTapped = { [weak self, weak tab] url, title in
+            guard let self, let tab else { return }
             // Aloha-style chooser instead of jumping straight into the player.
-            self.activeTab?.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            tab.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
                 DispatchQueue.main.async {
                     VideoActionSheet.present(url: url, title: title, cookies: cookies, presenter: self) { target in
                         self.presentVideoPlayer(url: target, title: title)
@@ -739,11 +786,26 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             case "private": self.openNewTab(privateMode: true)
             case "qr": self.openQRScanner()
             case "voice": self.openVoiceSearch()
+            case "search": self.addressField.becomeFirstResponder()
+            case "unsupported-video":
+                let alert = UIAlertController(
+                    title: "Unsupported video stream",
+                    message: "This video uses a protected, blob, or adaptive stream that cannot be opened directly. Try Download Media from Page.",
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
+                self.present(alert, animated: true)
             case "downloads":
                 let downloads = UINavigationController(rootViewController: DownloadsViewController())
                 self.present(downloads, animated: true)
             default: break
             }
+        }
+
+        tab.onPresentAlert = { [weak self] alert in
+            guard let self, self.presentedViewController == nil, self.view.window != nil else { return false }
+            self.present(alert, animated: true)
+            return true
         }
 
         // Pull-to-refresh.
@@ -778,24 +840,27 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private func refreshToolbar() {
         guard let tab = activeTab else { return }
         tabButton.setTitle("\(store.tabs.count)", for: .normal)
+        tabButton.accessibilityValue = "\(store.tabs.count)"
         backButton.isEnabled = tab.webView.canGoBack
         forwardButton.isEnabled = tab.webView.canGoForward
         // The floating download action belongs to the start page only.
-        downloadFAB.isHidden = tab.displayURL != nil
+        downloadFAB.isHidden = !tab.isStartPage
         if !addressField.isFirstResponder {
-            addressField.text = tab.displayURL?.absoluteString ?? ""
+            addressField.text = tab.sessionURL?.absoluteString ?? ""
         }
+        reloadButton.accessibilityLabel = tab.webView.isLoading ? "Stop loading" : "Reload page"
     }
 
     private func closeAllTabs() {
         for tab in store.tabs {
-            closedTabs.append(TabGridViewController.ClosedTab(url: tab.displayURL, isPrivate: tab.isPrivate))
+            closedTabs.append(TabGridViewController.ClosedTab(url: tab.sessionURL, isPrivate: tab.isPrivate))
         }
         store.closeAll()
         openNewTab(privateMode: false)
     }
 
     private func open(url: URL, privateMode: Bool) {
+        guard url.isWebURL else { return }
         let tab = store.newTab(privateMode: privateMode)
         activate(tab)
         tab.load(url: url)
@@ -855,14 +920,18 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             },
             onReopen: { [weak self] closed in self?.closedTabs.append(closed) },
             onClosed: { [weak self] tab in
-                guard let self, self.activeTab === tab else { return }
+                guard let self else { return }
                 // The visible tab was closed from the grid — show another tab
                 // or start a fresh one so no zombie page stays on screen.
-                if let next = self.store.tabs.first {
-                    self.activate(next)
-                } else {
-                    self.openNewTab(privateMode: false)
+                if self.activeTab === tab {
+                    if let next = self.store.tabs.first {
+                        self.activate(next)
+                    } else {
+                        self.openNewTab(privateMode: false)
+                    }
                 }
+                self.refreshToolbar()
+                self.store.persist()
             }
         )
         let navigation = UINavigationController(rootViewController: grid)
@@ -881,25 +950,25 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     /// Asks whether to reopen the tabs that were open when the app was killed.
     private func offerSessionRestore() {
+        guard AppLock.isEnabled == false || AppLock.isUnlocked else { return }
         let saved = store.savedSession()
-        guard saved.count > 1 else { return }
+        guard !saved.isEmpty else { return }
+        let urls = saved.compactMap { URL.webURL(from: $0.url) }
+        guard !urls.isEmpty else {
+            store.clearSavedSession()
+            return
+        }
         let alert = UIAlertController(
             title: "Restore Session?",
-            message: "Reopen the \(saved.count) tabs from your last session.",
+            message: "Reopen \(urls.count) \(urls.count == 1 ? "tab" : "tabs") from your last session.",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "Restore", style: .default) { [weak self] _ in
             guard let self else { return }
-            var lastTab: BrowserTab?
-            for entry in saved {
-                guard let url = URL(string: entry.url) else { continue }
+            for url in urls {
                 let tab = self.store.newTab(privateMode: false)
                 self.activate(tab)
                 tab.load(url: url)
-                lastTab = tab
-            }
-            if let lastTab {
-                self.activate(lastTab)
             }
             self.store.clearSavedSession()
         })
@@ -931,6 +1000,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
           const add = (url, title) => {
             if (!url) return;
             const absolute = new URL(url, document.baseURI).href;
+            if (!/^https?:/i.test(absolute)) return;
             if (!out.some((item) => item.url === absolute)) {
               out.push({ url: absolute, title: title || absolute });
             }
@@ -972,10 +1042,14 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private func presentMediaPicker(_ items: [MediaItem], from tab: BrowserTab) {
         let picker = MediaPickerViewController(items: items)
-        picker.onSelect = { [weak self, weak tab] item in
-            guard let self, let tab, let url = URL(string: item.url) else { return }
+        picker.onSelect = { [weak tab] item in
+            guard let tab, let url = URL(string: item.url), url.isWebURL else { return }
             tab.webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-                DownloadManager.shared.start(url: url, referer: tab.webView.url, cookies: cookies)
+                if url.pathExtension.lowercased() == "m3u8" {
+                    DownloadManager.shared.startHLS(url: url, referer: tab.webView.url, cookies: cookies)
+                } else {
+                    DownloadManager.shared.start(url: url, referer: tab.webView.url, cookies: cookies)
+                }
             }
         }
         let navigation = UINavigationController(rootViewController: picker)
@@ -995,10 +1069,9 @@ extension BrowserViewController {
         suggestionsGlass?.isHidden = true
         guard let tab = activeTab else { return true }
         let input = textField.text ?? ""
+        guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
         if let url = input.magdyNavigable {
             tab.load(url: url)
-        } else {
-            tab.loadStartPage()
         }
         return true
     }
@@ -1012,7 +1085,7 @@ extension BrowserViewController {
         suggestionsGlass?.isHidden = true
         // Restore the current URL when the user dismisses the keyboard without navigating.
         if (textField.text ?? "").isEmpty {
-            textField.text = activeTab?.webView.url?.absoluteString ?? ""
+            textField.text = activeTab?.sessionURL?.absoluteString ?? ""
         }
     }
 
@@ -1023,18 +1096,27 @@ extension BrowserViewController {
     ) -> Bool {
         guard let current = (textField.text as NSString?)?.replacingCharacters(in: range, with: string) else { return true }
         let query = current.trimmingCharacters(in: .whitespaces)
-        guard query.count >= 2, !current.contains(".") && !current.contains(" ") else {
+        let suggestionsAllowed = activeTab?.isPrivate != true
+            && UserDefaultsKey.bool(UserDefaultsKey.searchSuggestions, default: false)
+        guard suggestionsAllowed, query.count >= 2, !current.contains(".") && !current.contains(" ") else {
+            suggestions = []
+            suggestionsTable.reloadData()
             suggestionsTable.isHidden = true
-        suggestionsGlass?.isHidden = true
+            suggestionsGlass?.isHidden = true
             return true
         }
         SearchEngine.suggestions(for: query) { [weak self] results in
-            // Drop out-of-order responses for queries the user already replaced.
-            guard let self, textField.isFirstResponder, textField.text?.trimmingCharacters(in: .whitespaces) == query else { return }
-            self.suggestions = results
-            self.suggestionsTable.reloadData()
-            self.suggestionsTable.isHidden = results.isEmpty
-            self.suggestionsGlass?.isHidden = results.isEmpty
+            DispatchQueue.main.async {
+                // Drop out-of-order responses for queries the user already replaced.
+                guard let self, textField.isFirstResponder,
+                      textField.text?.trimmingCharacters(in: .whitespaces) == query,
+                      self.activeTab?.isPrivate != true,
+                      UserDefaultsKey.bool(UserDefaultsKey.searchSuggestions, default: false) else { return }
+                self.suggestions = results
+                self.suggestionsTable.reloadData()
+                self.suggestionsTable.isHidden = results.isEmpty
+                self.suggestionsGlass?.isHidden = results.isEmpty
+            }
         }
         return true
     }
@@ -1112,7 +1194,10 @@ extension BrowserViewController {
                 return
             }
             let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-            sheet.popoverPresentationController?.sourceView = self.view
+            if let popover = sheet.popoverPresentationController {
+                popover.sourceView = self.view
+                popover.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 1, height: 1)
+            }
             self.present(sheet, animated: true)
         }
     }
@@ -1123,9 +1208,10 @@ extension BrowserViewController {
     }
 
     private func openQRScanner() {
+        let privateMode = activeTab?.isPrivate == true
         let scanner = QRScannerViewController()
         scanner.onURLFound = { [weak self] url in
-            self?.open(url: url, privateMode: false)
+            self?.open(url: url, privateMode: privateMode)
         }
         let navigation = UINavigationController(rootViewController: scanner)
         navigation.modalPresentationStyle = .pageSheet
@@ -1133,10 +1219,11 @@ extension BrowserViewController {
     }
 
     private func openVoiceSearch() {
+        let privateMode = activeTab?.isPrivate == true
         let search = VoiceSearchViewController()
         search.onText = { [weak self] text in
             guard let self, let url = SearchEngine.effectiveSearchURL(for: text) else { return }
-            self.open(url: url, privateMode: false)
+            self.open(url: url, privateMode: privateMode)
         }
         let navigation = UINavigationController(rootViewController: search)
         navigation.modalPresentationStyle = .pageSheet
@@ -1184,11 +1271,12 @@ extension BrowserViewController {
         guard AppLock.isEnabled else {
             // Lock not enabled: just cover with the manual lock screen.
             let locked = LockedViewController()
-            locked.retry = { locked.dismiss(animated: true) }
+            locked.retry = { [weak locked] in locked?.dismiss(animated: true) }
+            locked.allowsCancellation = true
             locked.modalPresentationStyle = .overFullScreen
             present(locked, animated: false)
             return
         }
-        AppLock.gate(viewController: base, reason: "Unlock Magdy Browser", onUnlocked: {})
+        AppLock.gate(viewController: base, reason: "Unlock Magdy Browser", isAppLock: true, onUnlocked: {})
     }
 }

@@ -20,8 +20,10 @@ final class BlockStats {
     /// Runs a page audit: collects resource hosts and matches them against the
     /// domains that the enabled filter lists block.
     func audit(webView: WKWebView) {
-        let domains = FilterListManager.shared.blockedDomains
-        guard !domains.isEmpty else { return }
+        let manager = FilterListManager.shared
+        let blockedDomains = manager.blockedDomains
+        let exceptionDomains = manager.exceptionDomains
+        guard !blockedDomains.isEmpty else { return }
 
         let script = """
         (function () {
@@ -40,10 +42,12 @@ final class BlockStats {
 
             var blocked = 0
             for urlString in urls {
-                guard let url = URL(string: urlString), let host = url.host else { continue }
-                for domain in domains where host == domain || host.hasSuffix(".\(domain)") {
+                guard let url = URL(string: urlString), let host = url.host?.lowercased() else { continue }
+                func matches(_ domain: String) -> Bool {
+                    host == domain || host.hasSuffix(".\(domain)")
+                }
+                if !exceptionDomains.contains(where: matches), blockedDomains.contains(where: matches) {
                     blocked += 1
-                    break
                 }
             }
             self.add(blocked)

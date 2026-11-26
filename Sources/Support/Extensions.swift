@@ -11,6 +11,8 @@ extension Notification.Name {
     static let magdyThemeChanged = Notification.Name("com.magdy.themeChanged")
     /// Fired when the user switches the search bar between top and bottom.
     static let magdyOmniboxChanged = Notification.Name("com.magdy.omniboxChanged")
+    static let magdyLockRequested = Notification.Name("com.magdy.lockRequested")
+    static let magdyLanguageChanged = Notification.Name("com.magdy.languageChanged")
 }
 
 enum UserDefaultsKey {
@@ -20,11 +22,51 @@ enum UserDefaultsKey {
     static let defaultPrivate = "magdy.defaultPrivate"
     static let favorites = "magdy.favorites"
     static let language = "magdy.language"
+    static let searchSuggestions = "magdy.searchSuggestions"
     /// true = omnibox docked at the bottom (Aloha-style), false = top (default).
     static let omniboxBottomKey = "magdy.omniboxBottom"
 
     static func bool(_ key: String, default fallback: Bool) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? fallback
+    }
+}
+
+extension URL {
+    static func webURL(from rawValue: String) -> URL? {
+        let text = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if let url = URL(string: text), url.isWebURL { return url }
+        let hasExplicitScheme = text.range(
+            of: "^[A-Za-z][A-Za-z0-9+.-]*://",
+            options: .regularExpression
+        ) != nil
+        guard !hasExplicitScheme else { return nil }
+        let url = URL(string: "https://\(text)")
+        return url?.isWebURL == true ? url : nil
+    }
+
+    var isWebURL: Bool {
+        guard let scheme = scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = host, !host.isEmpty else { return false }
+        return true
+    }
+}
+
+extension HTTPCookie {
+    func applies(to url: URL) -> Bool {
+        guard let host = url.host?.lowercased(), !host.isEmpty else { return false }
+        let domain = domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard !domain.isEmpty, host == domain || host.hasSuffix("." + domain) else { return false }
+        if isSecure, url.scheme?.lowercased() != "https" { return false }
+        if let expiresDate, expiresDate <= Date() { return false }
+
+        let requestPath = url.path.isEmpty ? "/" : url.path
+        let cookiePath = path.isEmpty ? "/" : path
+        guard requestPath == cookiePath || requestPath.hasPrefix(cookiePath) else { return false }
+        if requestPath.count > cookiePath.count, !cookiePath.hasSuffix("/") {
+            return requestPath.dropFirst(cookiePath.count).first == "/"
+        }
+        return true
     }
 }
 
@@ -38,10 +80,10 @@ extension String {
             if let quick = Self.quickSearchURL(for: text) { return quick }
             return searchURL(for: text)
         }
-        if let url = URL(string: text), let scheme = url.scheme, !scheme.isEmpty, url.host != nil {
+        if text.contains(".") || text.contains(":"),
+           let url = URL.webURL(from: text) {
             return url
         }
-        if text.contains(".") { return URL(string: "https://\(text)") }
         return searchURL(for: text)
     }
 

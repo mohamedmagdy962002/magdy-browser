@@ -4,6 +4,7 @@ import UIKit
 final class FilterListsViewController: UITableViewController {
 
     private let manager = FilterListManager.shared
+    private var observer: UUID?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -11,6 +12,13 @@ final class FilterListsViewController: UITableViewController {
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         tableView.backgroundColor = Theme.canvas
         tableView.separatorStyle = .none
+        observer = manager.observe { [weak self] in
+            DispatchQueue.main.async { self?.tableView.reloadData() }
+        }
+    }
+
+    deinit {
+        if let observer { manager.removeObserver(observer) }
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -24,7 +32,9 @@ final class FilterListsViewController: UITableViewController {
         var content = cell.defaultContentConfiguration()
         content.text = list.title
         content.textProperties.font = Theme.body(15, weight: .semibold)
-        content.secondaryText = "\(list.domains.formatted()) domains · \(ByteCountFormatter.string(fromByteCount: Int64(list.bytes), countStyle: .file))"
+        content.secondaryText = manager.failedIDs.contains(list.id)
+            ? "Compilation failed — tap to retry"
+            : "\(list.domains.formatted()) domains · \(ByteCountFormatter.string(fromByteCount: Int64(list.bytes), countStyle: .file))"
         content.secondaryTextProperties.color = Theme.textSecondary
         cell.contentConfiguration = content
 
@@ -54,7 +64,14 @@ final class FilterListsViewController: UITableViewController {
         manager.compileEnabled()
     }
 
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        let id = manager.lists[indexPath.row].id
+        guard manager.failedIDs.contains(id), manager.enabledIDs.contains(id) else { return }
+        manager.compileEnabled()
+    }
+
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        "Lists are compiled into WebKit rules. Changes apply to new tabs."
+        "Lists are compiled into WebKit rules. Changes apply to open tabs."
     }
 }

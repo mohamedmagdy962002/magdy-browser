@@ -27,7 +27,7 @@ final class TabStore {
     /// Private tabs are never persisted.
     func persist() {
         let saved = tabs.compactMap { tab -> SavedTab? in
-            guard !tab.isPrivate, let url = tab.displayURL else { return nil }
+            guard !tab.isPrivate, let url = tab.sessionURL else { return nil }
             return SavedTab(url: url.absoluteString)
         }
         if let data = try? JSONEncoder().encode(saved) {
@@ -38,7 +38,7 @@ final class TabStore {
     func savedSession() -> [SavedTab] {
         guard let data = UserDefaults.standard.data(forKey: "magdy.session"),
               let saved = try? JSONDecoder().decode([SavedTab].self, from: data) else { return [] }
-        return saved
+        return saved.filter { URL.webURL(from: $0.url)?.absoluteString == $0.url }
     }
 
     func clearSavedSession() {

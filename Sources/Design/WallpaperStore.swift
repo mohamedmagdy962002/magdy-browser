@@ -6,7 +6,7 @@ final class WallpaperStore {
     static let shared = WallpaperStore()
 
     private let selectionKey = "magdy.wallpaper"
-    private static let fileName = "current-wallpaper.png"
+    private static let fileNames = ["current-wallpaper.png", "current-wallpaper.jpg"]
 
     private init() {}
 
@@ -14,11 +14,22 @@ final class WallpaperStore {
     static func available() -> [String] {
         guard let url = Bundle.main.url(forResource: "Wallpapers", withExtension: nil),
               let files = try? FileManager.default.contentsOfDirectory(atPath: url.path) else { return [] }
-        return files.filter { $0.hasSuffix(".png") }.sorted()
+        return files.filter { ["png", "jpg", "jpeg"].contains(($0 as NSString).pathExtension.lowercased()) }.sorted()
     }
 
     var selectedName: String? {
-        get { UserDefaults.standard.string(forKey: selectionKey) }
+        get {
+            guard let stored = UserDefaults.standard.string(forKey: selectionKey) else { return nil }
+            if stored.lowercased().hasSuffix(".png") {
+                let stem = (stored as NSString).deletingPathExtension
+                if Bundle.main.url(forResource: stem, withExtension: "jpg", subdirectory: "Wallpapers") != nil {
+                    let migrated = "\(stem).jpg"
+                    UserDefaults.standard.set(migrated, forKey: selectionKey)
+                    return migrated
+                }
+            }
+            return stored
+        }
         set { UserDefaults.standard.set(newValue, forKey: selectionKey) }
     }
 
@@ -27,10 +38,18 @@ final class WallpaperStore {
         guard let name = selectedName,
               let source = Bundle.main.url(forResource: name, withExtension: nil, subdirectory: "Wallpapers") else { return nil }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let destination = docs.appendingPathComponent(Self.fileName)
+        let fileName = "current-wallpaper.\(source.pathExtension.lowercased())"
+        let destination = docs.appendingPathComponent(fileName)
+        for staleName in Self.fileNames where staleName != fileName {
+            try? FileManager.default.removeItem(at: docs.appendingPathComponent(staleName))
+        }
         try? FileManager.default.removeItem(at: destination)
-        try? FileManager.default.copyItem(at: source, to: destination)
-        return Self.fileName
+        do {
+            try FileManager.default.copyItem(at: source, to: destination)
+            return fileName
+        } catch {
+            return nil
+        }
     }
 
     /// Base URL used when rendering the start page so relative resources resolve.
@@ -41,6 +60,8 @@ final class WallpaperStore {
     func clear() {
         selectedName = nil
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        try? FileManager.default.removeItem(at: docs.appendingPathComponent(Self.fileName))
+        for fileName in Self.fileNames {
+            try? FileManager.default.removeItem(at: docs.appendingPathComponent(fileName))
+        }
     }
 }
