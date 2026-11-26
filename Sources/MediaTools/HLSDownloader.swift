@@ -5,7 +5,7 @@ final class HLSRequest {
     private let lock = NSLock()
     private var cancelled = false
     private var completed = false
-    private var tasks: [URLSessionTask] = []
+    private var tasks: [UUID: URLSessionTask] = [:]
     private var cancellationHandlers: [UUID: () -> Void] = [:]
     private let completion: (Result<URL, Error>) -> Void
 
@@ -19,17 +19,17 @@ final class HLSRequest {
         return cancelled
     }
 
-    func add(_ task: URLSessionTask) -> Bool {
+    func add(_ task: URLSessionTask, id: UUID) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard !cancelled, !completed else { return false }
-        tasks.append(task)
+        tasks[id] = task
         return true
     }
 
-    func remove(_ task: URLSessionTask) {
+    func remove(id: UUID) {
         lock.lock()
-        tasks.removeAll { $0 === task }
+        tasks.removeValue(forKey: id)
         lock.unlock()
     }
 
@@ -55,7 +55,7 @@ final class HLSRequest {
             return
         }
         cancelled = true
-        let tasks = self.tasks
+        let tasks = Array(self.tasks.values)
         let handlers = Array(cancellationHandlers.values)
         self.tasks.removeAll()
         cancellationHandlers.removeAll()
@@ -541,8 +541,9 @@ enum HLSDownloader {
             completionLock.unlock()
             completion(result)
         }
+        let taskID = UUID()
         let task = URLSession.shared.dataTask(with: urlRequest) { data, response, error in
-            request?.remove(task)
+            request?.remove(id: taskID)
             if let error {
                 complete(.failure(error))
                 return
@@ -557,7 +558,7 @@ enum HLSDownloader {
             }
             complete(.success(data))
         }
-        if let request, !request.add(task) {
+        if let request, !request.add(task, id: taskID) {
             task.cancel()
             complete(.failure(HLSError.cancelled))
             return

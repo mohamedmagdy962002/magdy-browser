@@ -213,11 +213,7 @@ final class DownloadManager: NSObject {
         if let referer {
             request.setValue(referer.absoluteString, forHTTPHeaderField: "Referer")
         }
-        let host = url.host ?? ""
-        let matching = cookies.filter {
-            let domain = $0.domain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            return host == domain || host.hasSuffix(".\(domain)")
-        }
+        let matching = cookies.filter { $0.applies(to: url) }
         if !matching.isEmpty, let header = HTTPCookie.requestHeaderFields(with: matching)["Cookie"] {
             request.setValue(header, forHTTPHeaderField: "Cookie")
         }

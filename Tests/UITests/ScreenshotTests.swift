@@ -94,7 +94,7 @@ final class ScreenshotTests: XCTestCase {
         waitUntilHittable(app.cells["menu-item-2"])
         app.cells["menu-item-2"].tap()
         waitUntilHittable(app.buttons["download-video"])
-        XCTAssertEqual(tabButton.value as? String, "1")
+        XCTAssertEqual(tabButton.value as? String, "2")
 
         app.textFields["address-field"].tap()
         waitUntilHittable(app.keyboards.firstMatch)
