@@ -155,6 +155,17 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(BackupRestore.restore(from: data))
     }
 
+    func testBackupReadRejectsOversizedFileBeforeLoading() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        _ = FileManager.default.createFile(atPath: url.path, contents: nil)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(BackupRestore.maxBackupBytes + 1))
+        try handle.close()
+
+        XCTAssertThrowsError(try BackupRestore.readBackup(at: url))
+    }
+
     func testID3ExtendedHeaderPreservesFramesAndAudio() throws {
         func syncSafe(_ value: Int) -> Data {
             Data([

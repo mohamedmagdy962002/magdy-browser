@@ -263,7 +263,7 @@ extension VideoDownloaderViewController: WKNavigationDelegate {
     ) {
         if navigationAction.targetFrame?.isMainFrame != false,
            let url = navigationAction.request.url,
-           let kind = directKind(for: url) {
+           directKind(for: url) != nil {
             decisionHandler(.cancel)
             start(url: url)
             return

@@ -293,7 +293,6 @@ final class SettingsViewController: UITableViewController {
     /// Search bar docked top or bottom — applied live in the browser.
     private func chooseOmniboxPosition() {
         let sheet = UIAlertController(title: "Search Bar Position", message: nil, preferredStyle: .actionSheet)
-        let bottom = UserDefaults.standard.bool(forKey: UserDefaultsKey.omniboxBottomKey)
         sheet.addAction(UIAlertAction(title: "Top", style: .default) { _ in
             self.setPosition(bottom: false)
         })

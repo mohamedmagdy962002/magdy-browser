@@ -54,7 +54,7 @@ enum BackupRestore {
     }
 
     private static let version = 1
-    private static let maxBackupBytes = 25_000_000
+    static let maxBackupBytes = 25_000_000
     private static let omittedDataNotice = "Vault media, downloads and custom-filter files are not included in backups."
     private static let excludedPreferenceKeys: Set<String> = [
         "magdy.vault.entries",
@@ -78,10 +78,22 @@ enum BackupRestore {
             }
             guard let history = HistoryStore.shared.exportData() else { return nil }
             let backup = Backup(version: version, defaults: payload, history: history)
-            return try JSONEncoder().encode(backup)
+            let data = try JSONEncoder().encode(backup)
+            guard data.count <= maxBackupBytes else { return nil }
+            return data
         } catch {
             return nil
         }
+    }
+
+    static func readBackup(at url: URL) throws -> Data {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile != false,
+              let size = values.fileSize,
+              size <= maxBackupBytes else {
+            throw BackupError.backupTooLarge
+        }
+        return try Data(contentsOf: url, options: .mappedIfSafe)
     }
 
     /// Source-compatible Boolean API. False means validation or restore failed;
@@ -375,9 +387,9 @@ final class BackupViewController: UITableViewController, UIDocumentPickerDelegat
         guard let url = urls.first else { return }
         let data: Data
         do {
-            data = try Data(contentsOf: url)
+            data = try BackupRestore.readBackup(at: url)
         } catch {
-            showAlert(title: "Import failed", message: "The backup file could not be read.")
+            showAlert(title: "Import failed", message: "The backup file could not be read or is too large.")
             return
         }
 
