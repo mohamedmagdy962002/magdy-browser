@@ -256,10 +256,16 @@ final class BrowserTab: NSObject {
     func hibernate() {
         guard !isPrivate, !isHibernated else { return }
         isHibernated = true
-        // Only the CURRENT page is restored — a tab parked on the start page wakes to the start page.
-        hibernatedURL = webView.url
+        // Only web pages are restored; a tab parked on the start page wakes to a fresh start page.
+        hibernatedURL = webView.url?.isWebURL == true ? webView.url : nil
         let frame = webView.frame
         let userAgent = webView.customUserAgent
+        let previousWebView = webView
+        previousWebView.navigationDelegate = nil
+        previousWebView.uiDelegate = nil
+        previousWebView.scrollView.delegate = nil
+        previousWebView.stopLoading()
+        previousWebView.removeFromSuperview()
         if let blockerObserver {
             ContentBlocker.shared.removeObserver(blockerObserver)
             self.blockerObserver = nil

@@ -61,7 +61,7 @@ enum ID3 {
         }
 
         var tag = ID3Tag()
-        for frame in try frames(in: body, version: layout.version) {
+        for frame in try parseFrames(in: body, version: layout.version) {
             let payload = layout.version >= 4 && frame.flags & 0x0008 != 0
                 ? removeUnsynchronization(frame.payload) : frame.payload
             apply(identifier: frame.identifier, payload: payload, to: &tag)
@@ -102,7 +102,7 @@ enum ID3 {
         )
     }
 
-    private static func frames(in body: Data, version: Int) throws -> [Frame] {
+    private static func parseFrames(in body: Data, version: Int) throws -> [Frame] {
         var result: [Frame] = []
         var offset = 0
         while offset + 10 <= body.count {
@@ -188,7 +188,7 @@ enum ID3 {
             if layout.version < 4, layout.flags & 0x80 != 0 {
                 body = removeUnsynchronization(body)
             }
-            for frame in try frames(in: body, version: layout.version)
+            for frame in try parseFrames(in: body, version: layout.version)
                 where !managedFrames.contains(frame.identifier) && canPreserve(frame, version: layout.version) {
                 frames.append(encoded(frame))
             }
@@ -267,7 +267,7 @@ enum ID3 {
     }
 
     private static func canPreserve(_ frame: Frame, version: Int) -> Bool {
-        let unsupportedFlags = version >= 4 ? 0x0030 : 0x00C0
+        let unsupportedFlags: UInt16 = version >= 4 ? 0x0030 : 0x00C0
         return frame.flags & unsupportedFlags == 0
     }
 
