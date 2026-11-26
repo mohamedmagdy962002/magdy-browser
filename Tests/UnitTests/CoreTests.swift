@@ -183,6 +183,7 @@ final class CoreTests: XCTestCase {
         existing.append(contentsOf: Array("3DI".utf8))
         existing.append(contentsOf: [4, 0, 0x10])
         existing.append(syncSafe(body.count))
+        XCTAssertEqual(try ID3.read(data: existing).title, "Old title")
 
         let audio = Data([0xFF, 0xFB, 0x90, 0x64, 0x00, 0x01, 0x02])
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

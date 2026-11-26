@@ -180,9 +180,8 @@ enum ID3 {
             let totalSize = 10 + tagSize + footerSize
             guard tagSize >= 0, Int64(totalSize) <= fileSize else { throw ID3Error.badTag }
             try input.seek(toOffset: 0)
-            guard let tagData = try input.read(upToCount: totalSize), tagData.count == totalSize else {
-                throw ID3Error.badTag
-            }
+            let tagData = input.readData(ofLength: totalSize)
+            guard tagData.count == totalSize else { throw ID3Error.badTag }
             let layout = try tagLayout(in: tagData)
             var body = Data(tagData[layout.bodyStart..<layout.bodyEnd])
             if layout.version < 4, layout.flags & 0x80 != 0 {

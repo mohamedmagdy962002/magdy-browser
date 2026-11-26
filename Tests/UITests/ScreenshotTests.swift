@@ -13,6 +13,16 @@ final class ScreenshotTests: XCTestCase {
         continueAfterFailure = false
         app.launchEnvironment["MAGDY_UI_TEST"] = "1"
         app.launch()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
+        snap("00-launch")
+    }
+
+    override func tearDown() {
+        if (testRun?.failureCount ?? 0) > 0 {
+            let testName = name.split(separator: " ").last.map(String.init) ?? "test"
+            snap("failure-\(testName)")
+        }
+        super.tearDown()
     }
 
     private func snap(_ name: String) {
@@ -36,7 +46,11 @@ final class ScreenshotTests: XCTestCase {
             predicate: NSPredicate(format: "exists == true && isHittable == true"),
             object: element
         )
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: timeout), .completed)
+        let result = XCTWaiter.wait(for: [expectation], timeout: timeout)
+        if result != .completed {
+            snap("timeout-\(element.identifier)")
+        }
+        XCTAssertEqual(result, .completed)
     }
 
     func testCaptureScreens() {
@@ -96,7 +110,9 @@ final class ScreenshotTests: XCTestCase {
         app.cells["menu-item-2"].tap()
         waitUntilHittable(app.buttons["download-video"])
         XCTAssertEqual(tabButton.value as? String, "2")
+        snap("05-private-tab")
 
+        waitUntilHittable(app.textFields["address-field"])
         app.textFields["address-field"].tap()
         waitUntilHittable(app.keyboards.firstMatch)
         app.textFields["address-field"].typeText("magdy")
