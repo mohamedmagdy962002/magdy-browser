@@ -379,10 +379,10 @@ final class VaultViewController: UICollectionViewController, PHPickerViewControl
 
     /// Called only from a background queue. Provider staging files are always removed.
     private func finishImport(at source: URL, removeSourceWhenDone: Bool) {
-        if removeSourceWhenDone {
-            defer { try? FileManager.default.removeItem(at: source) }
-        }
         let imported = store.importItem(at: source)
+        if removeSourceWhenDone {
+            try? FileManager.default.removeItem(at: source)
+        }
         DispatchQueue.main.async { [weak self] in
             if imported { self?.reload() }
         }

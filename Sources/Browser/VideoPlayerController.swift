@@ -756,11 +756,11 @@ final class VideoPlayerController: UIViewController {
     /// Pause / resume / cancel without leaving the player.
     private func showDownloadMenu(for item: DownloadItem) {
         let alert = UIAlertController(title: item.fileName, message: nil, preferredStyle: .actionSheet)
-        if item.state == .running {
+        if item.state == .running, item.task != nil, !item.isPausing {
             alert.addAction(UIAlertAction(title: "Pause", style: .default) { _ in
                 DownloadManager.shared.pause(item)
             })
-        } else {
+        } else if item.state == .paused || item.resumeData != nil {
             alert.addAction(UIAlertAction(title: "Resume", style: .default) { _ in
                 DownloadManager.shared.resume(item)
             })

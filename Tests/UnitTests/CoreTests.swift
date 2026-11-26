@@ -68,9 +68,30 @@ final class CoreTests: XCTestCase {
             .value: "expired",
             .domain: "example.com",
             .path: "/",
-            .expiresDate: Date(timeIntervalSinceNow: -60)
+            .expires: Date(timeIntervalSinceNow: -60)
         ])!
         XCTAssertFalse(cookie.applies(to: URL(string: "https://example.com/")!))
+    }
+
+    func testHLSCancellationWinsOverHandlerCompletion() {
+        let completion = expectation(description: "HLS cancellation completes once")
+        completion.assertForOverFulfill = true
+        let request = HLSRequest { result in
+            guard case .failure(let error) = result,
+                  let hlsError = error as? HLSDownloader.HLSError,
+                  case .cancelled = hlsError else {
+                XCTFail("Expected HLS cancellation to win")
+                completion.fulfill()
+                return
+            }
+            completion.fulfill()
+        }
+        _ = request.addCancellationHandler { _ in
+            request.finish(.success(URL(string: "https://example.com/video.mp4")!))
+        }
+        request.cancel()
+        wait(for: [completion], timeout: 1)
+        XCTAssertTrue(request.isCancelled)
     }
 
     func testDestinationReservationsAvoidCollisions() throws {

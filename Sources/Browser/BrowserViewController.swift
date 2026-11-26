@@ -8,6 +8,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private let store = TabStore()
     private var activeTab: BrowserTab?
+    private var webViewConstraints: [NSLayoutConstraint] = []
     private var videoPresentationID = UUID()
 
     private let omnibox = UIView()
@@ -224,10 +225,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         Theme.floatingShadow(toolbarChrome)
         toolbarChrome.translatesAutoresizingMaskIntoConstraints = false
 
+        view.addSubview(webContainer)
         view.addSubview(omnibox)
         omnibox.addSubview(addressRow)
         view.addSubview(progressBar)
-        view.addSubview(webContainer)
         view.addSubview(toolbarChrome)
         toolbarChrome.addSubview(toolbar)
         view.addSubview(downloadFAB)
@@ -816,9 +817,16 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         // Hide the toolbar while the user scrolls down, bring it back scrolling up.
         tab.webView.scrollView.delegate = self
 
+        NSLayoutConstraint.deactivate(webViewConstraints)
+        tab.webView.translatesAutoresizingMaskIntoConstraints = false
+        webViewConstraints = [
+            tab.webView.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+            tab.webView.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
+            tab.webView.topAnchor.constraint(equalTo: webContainer.topAnchor),
+            tab.webView.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor)
+        ]
         webContainer.addSubview(tab.webView)
-        tab.webView.frame = webContainer.bounds
-        tab.webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        NSLayoutConstraint.activate(webViewConstraints)
 
         // Apply global page styles to an already-loaded tab (they are per-webView
         // injections, so switching tabs must re-apply them).

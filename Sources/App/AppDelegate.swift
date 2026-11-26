@@ -131,6 +131,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let target = components?.queryItems?.first(where: { $0.name == "url" })?.value
         let search = components?.queryItems?.first(where: { $0.name == "q" })?.value
+        if host == "open", target == nil, search == nil {
+            return true
+        }
         let webDestination = target.flatMap(URL.webURL(from:))
         let searchDestination = search.flatMap { SearchEngine.effectiveSearchURL(for: $0) }
         guard let resolved = host == "download" ? webDestination : (webDestination ?? searchDestination) else {

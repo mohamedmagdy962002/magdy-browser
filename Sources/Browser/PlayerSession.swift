@@ -37,7 +37,7 @@ final class PlayerSession {
             guard observedPlayer.timeControlStatus == .paused else { return }
             DispatchQueue.main.async {
                 guard let self, self.player === observedPlayer else { return }
-                self.stop(deactivateAudioSession: false)
+                self.stop()
             }
         }
         itemStatusObserver = item?.observe(\.status, options: [.new]) { [weak self] observedItem, _ in

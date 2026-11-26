@@ -55,6 +55,7 @@ final class HLSRequest {
             return
         }
         cancelled = true
+        completed = true
         let tasks = Array(self.tasks.values)
         let handlers = Array(cancellationHandlers.values)
         self.tasks.removeAll()
@@ -63,7 +64,7 @@ final class HLSRequest {
 
         tasks.forEach { $0.cancel() }
         handlers.forEach { $0() }
-        finish(.failure(HLSDownloader.HLSError.cancelled))
+        DispatchQueue.main.async { self.completion(.failure(HLSDownloader.HLSError.cancelled)) }
     }
 
     func finish(_ result: Result<URL, Error>) {
@@ -73,8 +74,9 @@ final class HLSRequest {
             return
         }
         completed = true
+        let terminalResult = cancelled ? Result<URL, Error>.failure(HLSDownloader.HLSError.cancelled) : result
         lock.unlock()
-        DispatchQueue.main.async { self.completion(result) }
+        DispatchQueue.main.async { self.completion(terminalResult) }
     }
 }
 

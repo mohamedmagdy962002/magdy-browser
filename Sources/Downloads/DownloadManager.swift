@@ -16,6 +16,8 @@ final class DownloadItem {
     var totalBytes: Int64 = 0
     var errorMessage: String?
     var localURL: URL?
+    /// Keeps a custom folder's security scope active while its finished file is in the queue.
+    var scopedFolder: URL?
     var cancel: (() -> Void)?
     var task: URLSessionDownloadTask?
     var resumeData: Data?
@@ -165,35 +167,47 @@ final class DownloadManager: NSObject {
         return try body(try downloadDirectory())
     }
 
-    private func removeDeliveredFile(_ url: URL) {
-        if let folder = resolveCustomFolder() {
-            defer { folder.stopAccessingSecurityScopedResource() }
-            try? FileManager.default.removeItem(at: url)
-        } else {
+    private func removeDeliveredFile(_ item: DownloadItem) {
+        if let url = item.localURL {
             try? FileManager.default.removeItem(at: url)
         }
+        item.scopedFolder?.stopAccessingSecurityScopedResource()
+        item.scopedFolder = nil
     }
 
     /// Moves a finished temp file to the chosen folder (or Downloads) with a unique name.
-    private func deliver(_ temp: URL, name: String) throws -> URL {
-        try withDeliveryFolder { folder in
-            let target = try reserveDestination(name: name, in: folder)
-            defer { releaseDestination(target) }
-
-            var moved = false
-            do {
-                try FileManager.default.moveItem(at: temp, to: target)
-                moved = true
-                var isDirectory: ObjCBool = false
-                guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
-                    throw DownloadError.missingFile(target.lastPathComponent)
-                }
-                return target
-            } catch {
-                if moved { try? FileManager.default.removeItem(at: target) }
-                if error is DownloadError { throw error }
-                throw DownloadError.deliveryFailed(error.localizedDescription)
+    private func deliver(_ temp: URL, name: String, item: DownloadItem) throws -> URL {
+        var scopedFolder = resolveCustomFolder()
+        if let folder = scopedFolder {
+            var isDirectory: ObjCBool = false
+            if !FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+                folder.stopAccessingSecurityScopedResource()
+                scopedFolder = nil
             }
+        }
+        let folder = scopedFolder ?? try downloadDirectory()
+        var retainsScope = false
+        defer { if !retainsScope { scopedFolder?.stopAccessingSecurityScopedResource() } }
+
+        let target = try reserveDestination(name: name, in: folder)
+        defer { releaseDestination(target) }
+
+        var moved = false
+        do {
+            try FileManager.default.moveItem(at: temp, to: target)
+            moved = true
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+                throw DownloadError.missingFile(target.lastPathComponent)
+            }
+            item.scopedFolder?.stopAccessingSecurityScopedResource()
+            item.scopedFolder = scopedFolder
+            retainsScope = true
+            return target
+        } catch {
+            if moved { try? FileManager.default.removeItem(at: target) }
+            if error is DownloadError { throw error }
+            throw DownloadError.deliveryFailed(error.localizedDescription)
         }
     }
 
@@ -282,7 +296,7 @@ final class DownloadManager: NSObject {
                     let base = (item.fileName as NSString).deletingPathExtension
                     let fileExtension = fileURL.pathExtension.lowercased() == "ts" ? "ts" : "mp4"
                     do {
-                        let destination = try self.deliver(fileURL, name: base + "." + fileExtension)
+                        let destination = try self.deliver(fileURL, name: base + "." + fileExtension, item: item)
                         item.localURL = destination
                         item.fileName = destination.lastPathComponent
                         item.state = .finished
@@ -387,9 +401,7 @@ final class DownloadManager: NSObject {
             item.task = nil
         }
         hlsItems.removeValue(forKey: item.id)
-        if let localURL = item.localURL {
-            removeDeliveredFile(localURL)
-        }
+        removeDeliveredFile(item)
         items.removeAll { $0 === item }
         notify()
     }
@@ -401,7 +413,7 @@ final class DownloadManager: NSObject {
                 item.task = nil
             }
             hlsItems.removeValue(forKey: item.id)
-            if let localURL = item.localURL { removeDeliveredFile(localURL) }
+            removeDeliveredFile(item)
         }
         items.removeAll { $0.state == .finished || $0.state == .failed || $0.state == .cancelled }
         notify()
@@ -565,12 +577,15 @@ extension DownloadManager: WKDownloadDelegate {
             return
         }
         let destination = item.localURL
+        var retainedFolder = false
         defer {
             if let destination, item.hasReservedDestination {
                 releaseDestination(destination)
                 item.hasReservedDestination = false
             }
-            scopedFolder?.stopAccessingSecurityScopedResource()
+            if !retainedFolder {
+                scopedFolder?.stopAccessingSecurityScopedResource()
+            }
             item.cancel = nil
             stopPolling(item)
             notify()
@@ -583,6 +598,9 @@ extension DownloadManager: WKDownloadDelegate {
         if item.state != .cancelled, error == nil, hasFile {
             item.state = .finished
             item.progress = 1
+            item.scopedFolder?.stopAccessingSecurityScopedResource()
+            item.scopedFolder = scopedFolder
+            retainedFolder = true
         } else {
             if let destination {
                 try? FileManager.default.removeItem(at: destination)
@@ -637,16 +655,20 @@ extension DownloadManager: URLSessionDownloadDelegate {
     ) {
         guard let item = taskItems[downloadTask.taskIdentifier],
               item.task === downloadTask,
-              item.state == .running,
-              !item.isPausing else { return }
+              item.state == .running else { return }
         taskItems.removeValue(forKey: downloadTask.taskIdentifier)
         item.task = nil
         item.cancel = nil
+        if item.isPausing {
+            item.isPausing = false
+            item.generation &+= 1
+            item.resumeData = nil
+        }
         if let error = httpStatusError(downloadTask.response) {
             markFailed(item, error: error)
         } else {
             do {
-                let destination = try deliver(location, name: item.fileName)
+                let destination = try deliver(location, name: item.fileName, item: item)
                 item.localURL = destination
                 item.fileName = destination.lastPathComponent
                 item.state = .finished
