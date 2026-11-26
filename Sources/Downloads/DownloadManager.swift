@@ -185,7 +185,12 @@ final class DownloadManager: NSObject {
                 scopedFolder = nil
             }
         }
-        let folder = scopedFolder ?? try downloadDirectory()
+        let folder: URL
+        if let scopedFolder {
+            folder = scopedFolder
+        } else {
+            folder = try downloadDirectory()
+        }
         var retainsScope = false
         defer { if !retainsScope { scopedFolder?.stopAccessingSecurityScopedResource() } }
 
