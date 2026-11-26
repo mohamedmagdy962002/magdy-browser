@@ -340,7 +340,7 @@ final class LibraryMediaCell: UICollectionViewCell {
         metadataLabel.text = "\(item.source.libraryTitle) · \(item.kind.libraryTitle)"
         detailLabel.text = LibraryMediaCell.detail(for: item, dateFormatter: dateFormatter)
         moreButton.isHidden = actions.isEmpty
-        moreButton.menu = actions.isEmpty ? nil : UIMenu(children: actions.map(\.uiAction))
+        moreButton.menu = actions.isEmpty ? nil : UIMenu(children: actions.map { $0.uiAction() })
         accessibilityCustomActions = actions.map { action in
             UIAccessibilityCustomAction(name: action.title) { _ in
                 action.perform()

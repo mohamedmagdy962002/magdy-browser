@@ -30,7 +30,7 @@ enum LibraryActions {
                   current.state == .finished,
                   let url = current.localURL,
                   FileManager.default.fileExists(atPath: url.path) else { return }
-            openFile(url, title: current.fileName, from: controller, sourceView: controller.view)
+            openFile(url: url, title: current.fileName, from: controller, sourceView: controller.view)
         case .favorite(let favorite):
             guard let current = FavoritesStore.shared.favorites.first(where: { $0.url == favorite.url }),
                   let url = URL(string: current.url), url.isWebURL else { return }
@@ -46,7 +46,7 @@ enum LibraryActions {
             controller.present(UINavigationController(rootViewController: ReaderViewController(article: article)), animated: true)
         case .none:
             guard let url = item.fileURL, FileManager.default.fileExists(atPath: url.path) else { return }
-            openFile(url, title: item.title, from: controller, sourceView: controller.view)
+            openFile(url: url, title: item.title, from: controller, sourceView: controller.view)
         }
     }
 
@@ -228,7 +228,7 @@ enum LibraryActions {
         let sheet = UIActivityViewController(activityItems: [value], applicationActivities: nil)
         let source = sourceView ?? controller.view
         sheet.popoverPresentationController?.sourceView = source
-        sheet.popoverPresentationController?.sourceRect = source.bounds
+        sheet.popoverPresentationController?.sourceRect = source?.bounds ?? .zero
         controller.present(sheet, animated: true)
     }
 
