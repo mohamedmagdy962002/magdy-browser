@@ -64,30 +64,50 @@ final class VideoUpscaler {
             return {}
         }
 
+        DispatchQueue.global(qos: .userInitiated).async {
+            Self.setupAndStart(
+                source: source,
+                scale: scale,
+                progress: progress,
+                operation: operation
+            )
+        }
+        return { operation.cancel() }
+    }
+
+    private static func setupAndStart(
+        source: URL,
+        scale: Double,
+        progress: @escaping (Double) -> Void,
+        operation: UpscaleOperation
+    ) {
+        defer { operation.finishSetup() }
         let asset = AVURLAsset(url: source)
         guard let track = asset.tracks(withMediaType: .video).first else {
             operation.fail(.noVideoTrack)
-            return { operation.cancel() }
+            return
         }
+        guard operation.isActive else { return }
 
         let targetSize: CGSize
         do {
             targetSize = try outputSize(for: track.naturalSize, scale: scale)
         } catch let error as UpscaleError {
             operation.fail(error)
-            return { operation.cancel() }
+            return
         } catch {
             operation.fail(.invalidDimensions)
-            return { operation.cancel() }
+            return
         }
         let duration = asset.duration.seconds
+        guard operation.isActive else { return }
 
         let reader: AVAssetReader
         do {
             reader = try AVAssetReader(asset: asset)
         } catch {
             operation.fail(.cannotAddOutput)
-            return { operation.cancel() }
+            return
         }
         let videoOutput = AVAssetReaderTrackOutput(
             track: track,
@@ -96,17 +116,17 @@ final class VideoUpscaler {
         videoOutput.alwaysCopiesSampleData = false
         guard reader.canAdd(videoOutput) else {
             operation.fail(.cannotAddOutput)
-            return { operation.cancel() }
+            return
         }
         reader.add(videoOutput)
 
+        guard operation.isActive else { return }
         let writer: AVAssetWriter
         do {
             writer = try AVAssetWriter(outputURL: operation.destination, fileType: .mp4)
-            operation.claimOutput()
         } catch {
             operation.fail(.cannotCreateWriter)
-            return { operation.cancel() }
+            return
         }
 
         let videoInput = AVAssetWriterInput(
@@ -131,7 +151,7 @@ final class VideoUpscaler {
 
         guard writer.canAdd(videoInput) else {
             operation.fail(.cannotCreateWriter)
-            return { operation.cancel() }
+            return
         }
         writer.add(videoInput)
 
@@ -149,16 +169,21 @@ final class VideoUpscaler {
             }
         }
 
-        operation.configure(reader: reader, writer: writer, inputCount: audioInput == nil ? 1 : 2)
+        guard operation.configure(reader: reader, writer: writer, inputCount: audioInput == nil ? 1 : 2) else {
+            return
+        }
+        guard operation.isActive else { return }
         guard writer.startWriting() else {
             operation.fail(.encodingFailed(writer.error?.localizedDescription ?? "Writer failed to start."))
-            return { operation.cancel() }
+            return
         }
+        guard operation.isActive else { return }
         writer.startSession(atSourceTime: .zero)
         guard reader.startReading() else {
             operation.fail(.encodingFailed(reader.error?.localizedDescription ?? "Reader failed to start."))
-            return { operation.cancel() }
+            return
         }
+        guard operation.isActive else { return }
 
         let queue = DispatchQueue(label: "com.magdy.upscale")
         videoInput.requestMediaDataWhenReady(on: queue) {
@@ -217,8 +242,6 @@ final class VideoUpscaler {
                 }
             }
         }
-
-        return { operation.cancel() }
     }
 
     private static func outputSize(for naturalSize: CGSize, scale: Double) throws -> CGSize {
@@ -306,7 +329,8 @@ private final class UpscaleOperation {
     private var remainingInputs = 0
     private var completed = false
     private var finishing = false
-    private var ownsOutput = false
+    private var setupInProgress = true
+    private var ownsOutput = true
 
     init(destination: URL, completion: @escaping (Result<URL, VideoUpscaler.UpscaleError>) -> Void) {
         self.destination = destination
@@ -319,18 +343,29 @@ private final class UpscaleOperation {
         return !completed
     }
 
-    func claimOutput() {
+    func configure(reader: AVAssetReader, writer: AVAssetWriter, inputCount: Int) -> Bool {
         lock.lock()
-        ownsOutput = true
-        lock.unlock()
-    }
-
-    func configure(reader: AVAssetReader, writer: AVAssetWriter, inputCount: Int) {
-        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return false
+        }
         self.reader = reader
         self.writer = writer
         remainingInputs = inputCount
         lock.unlock()
+        return true
+    }
+
+    func finishSetup() {
+        lock.lock()
+        guard setupInProgress else {
+            lock.unlock()
+            return
+        }
+        setupInProgress = false
+        let shouldCleanup = completed
+        lock.unlock()
+        if shouldCleanup { cleanup() }
     }
 
     func inputDidFinish() -> Bool {
@@ -366,10 +401,11 @@ private final class UpscaleOperation {
         let writer = self.writer
         self.reader = nil
         self.writer = nil
+        let cleanupNow = !setupInProgress
         lock.unlock()
         if reader?.status == .reading { reader?.cancelReading() }
         if writer?.status == .writing { writer?.cancelWriting() }
-        cleanup()
+        if cleanupNow { cleanup() }
         completion(.failure(.cancelled))
     }
 
@@ -384,10 +420,11 @@ private final class UpscaleOperation {
         let writer = self.writer
         self.reader = nil
         self.writer = nil
+        let cleanupNow = !setupInProgress
         lock.unlock()
         if reader?.status == .reading { reader?.cancelReading() }
         if writer?.status == .writing { writer?.cancelWriting() }
-        cleanup()
+        if cleanupNow { cleanup() }
         completion(.failure(error))
     }
 
@@ -405,7 +442,7 @@ private final class UpscaleOperation {
         lock.unlock()
 
         guard status == .completed else {
-            cleanup()
+            cleanupTerminalState()
             let failure: VideoUpscaler.UpscaleError = status == .cancelled
                 ? .cancelled : .encodingFailed(error?.localizedDescription ?? "Encoding failed.")
             completion(.failure(failure))
@@ -416,12 +453,26 @@ private final class UpscaleOperation {
         guard FileManager.default.fileExists(atPath: destination.path, isDirectory: &isDirectory),
               !isDirectory.boolValue,
               size > 0 else {
-            cleanup()
+            cleanupTerminalState()
             completion(.failure(.missingOutput))
             return
         }
+        lock.lock()
+        ownsOutput = false
+        lock.unlock()
         VideoUpscaler.releaseOutput(destination)
         completion(.success(destination))
+    }
+
+    private func cleanupTerminalState() {
+        lock.lock()
+        let setupPending = setupInProgress
+        lock.unlock()
+        if setupPending {
+            finishSetup()
+        } else {
+            cleanup()
+        }
     }
 
     private func cleanup() {

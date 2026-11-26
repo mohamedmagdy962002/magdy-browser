@@ -154,4 +154,54 @@ final class CoreTests: XCTestCase {
         let data = try JSONEncoder().encode(backup)
         XCTAssertFalse(BackupRestore.restore(from: data))
     }
+
+    func testID3ExtendedHeaderPreservesFramesAndAudio() throws {
+        func syncSafe(_ value: Int) -> Data {
+            Data([
+                UInt8((value >> 21) & 0x7F),
+                UInt8((value >> 14) & 0x7F),
+                UInt8((value >> 7) & 0x7F),
+                UInt8(value & 0x7F)
+            ])
+        }
+        func frame(_ identifier: String, _ payload: Data) -> Data {
+            Data(identifier.utf8) + syncSafe(payload.count) + Data([0, 0]) + payload
+        }
+
+        let oldTitle = Data([3]) + Data("Old title".utf8)
+        let custom = Data([3]) + Data("CUSTOM".utf8) + Data([0]) + Data("kept".utf8)
+        let disc = Data([3]) + Data("1/2".utf8)
+        var body = syncSafe(6) + Data(repeating: 0, count: 6)
+        body.append(frame("TIT2", oldTitle))
+        body.append(frame("TXXX", custom))
+        body.append(frame("TPOS", disc))
+
+        var existing = Data("ID3".utf8)
+        existing.append(contentsOf: [4, 0, 0x10])
+        existing.append(syncSafe(body.count))
+        existing.append(body)
+        existing.append(contentsOf: Array("3DI".utf8))
+        existing.append(contentsOf: [4, 0, 0x10])
+        existing.append(syncSafe(body.count))
+
+        let audio = Data([0xFF, 0xFB, 0x90, 0x64, 0x00, 0x01, 0x02])
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("sample.mp3")
+        try (existing + audio).write(to: url)
+
+        var updated = ID3Tag()
+        updated.title = "New title"
+        updated.track = "2/3"
+        try ID3.write(updated, to: url)
+
+        let output = try Data(contentsOf: url)
+        let tag = try ID3.read(data: output)
+        XCTAssertEqual(tag.title, "New title")
+        XCTAssertEqual(tag.track, "2/3")
+        XCTAssertNotNil(output.range(of: Data("TXXX".utf8)))
+        XCTAssertNotNil(output.range(of: Data("TPOS".utf8)))
+        XCTAssertEqual(output.suffix(audio.count), audio)
+    }
 }

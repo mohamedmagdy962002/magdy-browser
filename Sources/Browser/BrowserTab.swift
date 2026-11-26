@@ -95,7 +95,7 @@ final class BrowserTab: NSObject {
             if allowed {
                 privateAdAllowedHosts.insert(host)
             } else {
-                privateAdAllowedHosts.removeAll { host == $0 || host.hasSuffix(".\($0)") }
+                privateAdAllowedHosts.remove(host)
             }
         } else {
             Self.setAdAllowed(host, allowed)

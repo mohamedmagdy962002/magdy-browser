@@ -27,6 +27,24 @@ enum ID3Error: LocalizedError {
 /// Minimal ID3v2 reader/writer (v2.3 and v2.4 read, v2.4 write).
 enum ID3 {
 
+    private struct TagLayout {
+        let version: Int
+        let flags: UInt8
+        let bodyStart: Int
+        let bodyEnd: Int
+        let audioStart: Int
+    }
+
+    private struct Frame {
+        let identifier: String
+        let flags: UInt16
+        let payload: Data
+    }
+
+    private static let managedFrames: Set<String> = [
+        "TIT2", "TPE1", "TALB", "TYER", "TDRC", "TCON", "TRCK", "COMM", "APIC"
+    ]
+
     // MARK: - Read
 
     static func read(from url: URL) throws -> ID3Tag {
@@ -36,37 +54,95 @@ enum ID3 {
     static func read(data: Data) throws -> ID3Tag {
         guard data.count >= 10 else { throw ID3Error.badTag }
         guard String(data: data[0..<3], encoding: .ascii) == "ID3" else { throw ID3Error.notMPEGFile }
-
-        let version = Int(data[3])
-        let flags = data[5]
-        let tagSize = syncSafeValue(data[6..<10])
-        guard tagSize >= 0, 10 + tagSize <= data.count else { throw ID3Error.badTag }
-
-        var bodyStart = 10
-        let bodyEnd = 10 + tagSize
-
-        if flags & 0x40 != 0 { // extended header present
-            guard bodyStart + 4 <= data.count else { throw ID3Error.badTag }
-            let raw = bigEndianValue(data[bodyStart..<(bodyStart + 4)])
-            bodyStart += version >= 4 ? syncSafeValue(data[bodyStart..<(bodyStart + 4)]) : Int(raw) + 4
+        let layout = try tagLayout(in: data)
+        var body = Data(data[layout.bodyStart..<layout.bodyEnd])
+        if layout.version < 4, layout.flags & 0x80 != 0 {
+            body = removeUnsynchronization(body)
         }
 
         var tag = ID3Tag()
-        var offset = bodyStart
-        while offset + 10 <= bodyEnd {
-            let identifier = String(data: data[offset..<(offset + 4)], encoding: .ascii) ?? ""
-            if identifier.isEmpty || identifier.first == "\0" { break } // padding
-
-            let size = version >= 4
-                ? syncSafeValue(data[(offset + 4)..<(offset + 8)])
-                : Int(bigEndianValue(data[(offset + 4)..<(offset + 8)]))
-            let dataStart = offset + 10
-            guard size >= 0, dataStart + size <= bodyEnd else { break }
-
-            apply(identifier: identifier, payload: Data(data[dataStart..<(dataStart + size)]), to: &tag)
-            offset = dataStart + size
+        for frame in try frames(in: body, version: layout.version) {
+            let payload = layout.version >= 4 && frame.flags & 0x0008 != 0
+                ? removeUnsynchronization(frame.payload) : frame.payload
+            apply(identifier: frame.identifier, payload: payload, to: &tag)
         }
         return tag
+    }
+
+    private static func tagLayout(in data: Data) throws -> TagLayout {
+        guard data.count >= 10, String(data: data[0..<3], encoding: .ascii) == "ID3" else {
+            throw ID3Error.notMPEGFile
+        }
+        let version = Int(data[3])
+        guard version == 3 || version == 4 else { throw ID3Error.badTag }
+        let flags = data[5]
+        let tagSize = version >= 4
+            ? syncSafeValue(data[6..<10])
+            : Int(bigEndianValue(data[6..<10]))
+        let bodyEnd = 10 + tagSize
+        let footerSize = version >= 4 && flags & 0x10 != 0 ? 10 : 0
+        guard tagSize >= 0, bodyEnd + footerSize <= data.count else { throw ID3Error.badTag }
+
+        var bodyStart = 10
+        if flags & 0x40 != 0 {
+            guard bodyStart + 4 <= bodyEnd else { throw ID3Error.badTag }
+            let extendedSize = version >= 4
+                ? syncSafeValue(data[bodyStart..<(bodyStart + 4)])
+                : Int(bigEndianValue(data[bodyStart..<(bodyStart + 4)]))
+            let totalSize = extendedSize + 4
+            guard totalSize >= 4, bodyStart + totalSize <= bodyEnd else { throw ID3Error.badTag }
+            bodyStart += totalSize
+        }
+        return TagLayout(
+            version: version,
+            flags: flags,
+            bodyStart: bodyStart,
+            bodyEnd: bodyEnd,
+            audioStart: bodyEnd + footerSize
+        )
+    }
+
+    private static func frames(in body: Data, version: Int) throws -> [Frame] {
+        var result: [Frame] = []
+        var offset = 0
+        while offset + 10 <= body.count {
+            let identifierBytes = body[offset..<(offset + 4)]
+            guard identifierBytes.allSatisfy({ $0 >= 48 && $0 <= 57 || $0 >= 65 && $0 <= 90 }),
+                  let identifier = String(data: identifierBytes, encoding: .ascii) else {
+                if body[offset..<body.count].allSatisfy({ $0 == 0 }) { break }
+                throw ID3Error.badTag
+            }
+
+            let size = version >= 4
+                ? syncSafeValue(body[(offset + 4)..<(offset + 8)])
+                : Int(bigEndianValue(body[(offset + 4)..<(offset + 8)]))
+            let dataStart = offset + 10
+            guard size >= 0, dataStart + size <= body.count else { throw ID3Error.badTag }
+            let flags = UInt16(body[offset + 8]) << 8 | UInt16(body[offset + 9])
+            result.append(Frame(
+                identifier: identifier,
+                flags: flags,
+                payload: Data(body[dataStart..<(dataStart + size)])
+            ))
+            offset = dataStart + size
+        }
+        if offset < body.count, !body[offset..<body.count].allSatisfy({ $0 == 0 }) {
+            throw ID3Error.badTag
+        }
+        return result
+    }
+
+    private static func removeUnsynchronization(_ data: Data) -> Data {
+        var result = Data()
+        result.reserveCapacity(data.count)
+        var index = data.startIndex
+        while index < data.endIndex {
+            let byte = data[index]
+            result.append(byte)
+            index += 1
+            if byte == 0xFF, index < data.endIndex, data[index] == 0 { index += 1 }
+        }
+        return result
     }
 
     private static func apply(identifier: String, payload: Data, to tag: inout ID3Tag) {
@@ -86,7 +162,38 @@ enum ID3 {
     // MARK: - Write
 
     static func write(_ tag: ID3Tag, to url: URL) throws {
+        let fileManager = FileManager.default
+        let input = try FileHandle(forReadingFrom: url)
+        defer { try? input.close() }
+        let fileSize = try input.seekToEnd()
+        try input.seek(toOffset: 0)
+        let prefix = try input.read(upToCount: 10) ?? Data()
+        var audioStart = 0
         var frames = Data()
+
+        if prefix.count >= 10, String(data: prefix[0..<3], encoding: .ascii) == "ID3" {
+            let version = Int(prefix[3])
+            let tagSize = version >= 4
+                ? syncSafeValue(prefix[6..<10])
+                : Int(bigEndianValue(prefix[6..<10]))
+            let footerSize = version >= 4 && prefix[5] & 0x10 != 0 ? 10 : 0
+            let totalSize = 10 + tagSize + footerSize
+            guard tagSize >= 0, Int64(totalSize) <= fileSize else { throw ID3Error.badTag }
+            try input.seek(toOffset: 0)
+            guard let tagData = try input.read(upToCount: totalSize), tagData.count == totalSize else {
+                throw ID3Error.badTag
+            }
+            let layout = try tagLayout(in: tagData)
+            var body = Data(tagData[layout.bodyStart..<layout.bodyEnd])
+            if layout.version < 4, layout.flags & 0x80 != 0 {
+                body = removeUnsynchronization(body)
+            }
+            for frame in try frames(in: body, version: layout.version)
+                where !managedFrames.contains(frame.identifier) && canPreserve(frame, version: layout.version) {
+                frames.append(encoded(frame))
+            }
+            audioStart = layout.audioStart
+        }
 
         func addText(_ identifier: String, _ value: String) {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -124,25 +231,10 @@ enum ID3 {
             frames.append(frame(identifier: "APIC", payload: payload))
         }
 
+        guard frames.count <= 0x0FFF_FFFF else { throw ID3Error.badTag }
         var header = Data("ID3".utf8)
         header.append(contentsOf: [4, 0, 0]) // v2.4.0, no flags
         header.append(contentsOf: syncSafeBytes(frames.count))
-
-        let fileManager = FileManager.default
-        let input = try FileHandle(forReadingFrom: url)
-        defer { try? input.close() }
-        let fileSize = try input.seekToEnd()
-        try input.seek(toOffset: 0)
-        let prefix = try input.read(upToCount: 10) ?? Data()
-        var audioStart = 0
-        if prefix.count >= 10, String(data: prefix[0..<3], encoding: .ascii) == "ID3" {
-            let version = Int(prefix[3])
-            let tagSize = version >= 4
-                ? syncSafeValue(prefix[6..<10])
-                : Int(bigEndianValue(prefix[6..<10]))
-            guard tagSize >= 0, Int64(10 + tagSize) <= fileSize else { throw ID3Error.badTag }
-            audioStart = 10 + tagSize
-        }
 
         let temporary = url.deletingLastPathComponent()
             .appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
@@ -162,11 +254,21 @@ enum ID3 {
     }
 
     private static func frame(identifier: String, payload: Data) -> Data {
-        var out = Data(identifier.utf8)
-        out.append(contentsOf: syncSafeBytes(payload.count))
-        out.append(contentsOf: [0, 0])
-        out.append(payload)
+        encoded(Frame(identifier: identifier, flags: 0, payload: payload))
+    }
+
+    private static func encoded(_ frame: Frame) -> Data {
+        var out = Data(frame.identifier.utf8)
+        out.append(contentsOf: syncSafeBytes(frame.payload.count))
+        out.append(UInt8(frame.flags >> 8))
+        out.append(UInt8(frame.flags & 0x00FF))
+        out.append(frame.payload)
         return out
+    }
+
+    private static func canPreserve(_ frame: Frame, version: Int) -> Bool {
+        let unsupportedFlags = version >= 4 ? 0x0030 : 0x00C0
+        return frame.flags & unsupportedFlags == 0
     }
 
     // MARK: - Decoding helpers
