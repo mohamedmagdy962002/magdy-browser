@@ -36,8 +36,8 @@ final class SecondaryButton: UIButton {
         var configuration = UIButton.Configuration.bordered()
         configuration.baseBackgroundColor = Theme.surface
         configuration.baseForegroundColor = Theme.accentText
-        configuration.borderColor = Theme.border
-        configuration.borderWidth = 1
+        configuration.background.strokeColor = Theme.border
+        configuration.background.strokeWidth = 1
         configuration.cornerStyle = .small
         configuration.contentInsets = NSDirectionalEdgeInsets(
             top: Theme.Spacing.x3,
