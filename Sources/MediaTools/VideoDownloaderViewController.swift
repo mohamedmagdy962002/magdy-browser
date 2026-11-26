@@ -6,7 +6,13 @@ final class VideoDownloaderViewController: UITableViewController {
 
     private let urlField = UITextField()
     private let statusLabel = UILabel()
-    private let scanner = WKWebView(frame: .zero)
+    private let dataStore: WKWebsiteDataStore
+    private lazy var scanner: WKWebView = {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = dataStore
+        return WKWebView(frame: .zero, configuration: configuration)
+    }()
+    private var downloadObserver: NSObjectProtocol?
     private var candidates: [MediaCandidate] = []
     private var scannedURL: URL?
     private var pendingURL: URL?
@@ -16,6 +22,20 @@ final class VideoDownloaderViewController: UITableViewController {
         "m3u8", "mpd", "mp4", "m4v", "mov", "webm", "mkv", "avi",
         "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "zip", "pdf", "apk", "epub"
     ]
+
+    init(dataStore: WKWebsiteDataStore = .default()) {
+        self.dataStore = dataStore
+        super.init(style: .plain)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    deinit {
+        if let downloadObserver {
+            NotificationCenter.default.removeObserver(downloadObserver)
+        }
+    }
 
     /// Starts scanning a URL as soon as the view is on screen.
     func begin(url: URL) {
@@ -42,7 +62,7 @@ final class VideoDownloaderViewController: UITableViewController {
             start(url: pendingURL)
         }
 
-        NotificationCenter.default.addObserver(
+        downloadObserver = NotificationCenter.default.addObserver(
             forName: .magdyDownloadURL, object: nil, queue: .main
         ) { [weak self] note in
             guard let self, let url = note.object as? URL else { return }

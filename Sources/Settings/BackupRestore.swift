@@ -32,6 +32,7 @@ enum BackupRestore {
         case unsupportedValue(String)
         case invalidHistory
         case invalidPayload(String)
+        case backupTooLarge
         case missingPreferenceDomain
         case verificationFailed(String)
         case historyWriteFailed
@@ -44,6 +45,7 @@ enum BackupRestore {
             case .unsupportedValue(let name): return "Unsupported preference value for \(name)."
             case .invalidHistory: return "The history payload is not valid history JSON."
             case .invalidPayload(let name): return "Invalid backup payload for \(name)."
+            case .backupTooLarge: return "The backup is too large to restore safely."
             case .missingPreferenceDomain: return "The app preference domain is unavailable."
             case .verificationFailed(let name): return "Could not verify the restored preference \(name)."
             case .historyWriteFailed: return "History could not be saved."
@@ -52,6 +54,7 @@ enum BackupRestore {
     }
 
     private static let version = 1
+    private static let maxBackupBytes = 25_000_000
     private static let omittedDataNotice = "Vault media, downloads and custom-filter files are not included in backups."
     private static let excludedPreferenceKeys: Set<String> = [
         "magdy.vault.entries",
@@ -64,8 +67,8 @@ enum BackupRestore {
         var payload: [String: Data] = [:]
         do {
             for (key, value) in UserDefaults.standard.dictionaryRepresentation() where key.hasPrefix("magdy.") {
+                guard !isExcludedPreference(key) else { continue }
                 guard isSafePreferenceName(key) else { throw BackupError.invalidName(key) }
-                guard !excludedPreferenceKeys.contains(key) else { continue }
                 let encoded = try PropertyListSerialization.data(
                     fromPropertyList: value, format: .binary, options: 0
                 )
@@ -159,12 +162,17 @@ enum BackupRestore {
     // MARK: - Validation and staging
 
     private static func stage(_ data: Data) throws -> StagedBackup {
+        guard data.count <= maxBackupBytes else { throw BackupError.backupTooLarge }
         let backup = try JSONDecoder().decode(Backup.self, from: data)
         guard backup.version == version else { throw BackupError.invalidVersion(backup.version) }
 
         var defaults: [String: Any] = [:]
         var omitted = [omittedDataNotice]
         for (key, encoded) in backup.defaults {
+            if isExcludedPreference(key) {
+                omitted.append("Excluded vault, download and custom-filter references were ignored.")
+                continue
+            }
             guard isSafePreferenceName(key) else { throw BackupError.invalidName(key) }
             let value: Any
             do {
@@ -174,10 +182,6 @@ enum BackupRestore {
             }
             guard isSupportedPreferenceValue(value) else { throw BackupError.unsupportedValue(key) }
             try validatePreferencePayload(key, value: value)
-            guard !excludedPreferenceKeys.contains(key) else {
-                omitted.append("Excluded vault, download and custom-filter references were ignored.")
-                continue
-            }
             defaults[key] = value
         }
 
@@ -189,6 +193,10 @@ enum BackupRestore {
             }
         }
         return StagedBackup(defaults: defaults, history: backup.history, omittedData: omitted)
+    }
+
+    private static func isExcludedPreference(_ key: String) -> Bool {
+        excludedPreferenceKeys.contains(key) || key.hasPrefix("magdy.playback.")
     }
 
     private static func isSafePreferenceName(_ name: String) -> Bool {
@@ -220,7 +228,8 @@ enum BackupRestore {
         case "magdy.session":
             guard let data = value as? Data,
                   let tabs = try? JSONDecoder().decode([TabStore.SavedTab].self, from: data),
-                  tabs.allSatisfy({ URL(string: $0.url)?.isWebURL == true }) else {
+                  tabs.count <= TabStore.maxSavedTabs,
+                  tabs.allSatisfy({ URL.webURL(from: $0.url)?.absoluteString == $0.url }) else {
                 throw BackupError.invalidPayload(key)
             }
         case "magdy.filterLists.enabled":

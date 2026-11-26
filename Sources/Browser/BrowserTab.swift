@@ -19,6 +19,11 @@ final class BrowserTab: NSObject {
     /// Start-page quick action button: "private" | "qr" | "voice" | "downloads" | "search".
     var onQuickAction: ((String) -> Void)?
     var onPresentAlert: ((UIAlertController) -> Bool)?
+    var onSessionURLChange: ((BrowserTab) -> Void)?
+
+    private var privateTextZooms: [String: Double] = [:]
+    private var privateUserAgents: [String: String] = [:]
+    private var privateAdAllowedHosts: Set<String> = []
 
     /// Memory Saver: true while the page is released and will reload on activation.
     private(set) var isHibernated = false
@@ -77,9 +82,29 @@ final class BrowserTab: NSObject {
         UserDefaults.standard.set(hosts, forKey: "magdy.adAllowedSites")
     }
 
+    func isAdAllowed(_ host: String?) -> Bool {
+        guard let host else { return false }
+        if isPrivate {
+            return privateAdAllowedHosts.contains { host == $0 || host.hasSuffix(".\($0)") }
+        }
+        return Self.isAdAllowed(host)
+    }
+
+    func setAdAllowed(_ allowed: Bool, for host: String) {
+        if isPrivate {
+            if allowed {
+                privateAdAllowedHosts.insert(host)
+            } else {
+                privateAdAllowedHosts.removeAll { host == $0 || host.hasSuffix(".\($0)") }
+            }
+        } else {
+            Self.setAdAllowed(host, allowed)
+        }
+    }
+
     func applyNewRuleLists() {
         let controller = webView.configuration.userContentController
-        if Self.isAdAllowed(webView.url?.host) {
+        if isAdAllowed(webView.url?.host) {
             // Exempted site: detach every rule list, including ones attached earlier.
             for (id, list) in appliedRuleLists {
                 controller.remove(list)
@@ -367,6 +392,9 @@ extension BrowserTab: WKNavigationDelegate {
         pendingURL = webView.url
         // Host is final here — re-evaluate the per-site ad allowlist for this navigation.
         applyNewRuleLists()
+        if !isPrivate, let url = webView.url, url.isWebURL {
+            onSessionURLChange?(self)
+        }
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -390,6 +418,7 @@ extension BrowserTab: WKNavigationDelegate {
         // Private tabs leave no trace; generated start/error pages are not history.
         if !isPrivate, let url = webView.url, url.isWebURL {
             HistoryStore.shared.record(url: url, title: webView.title)
+            onSessionURLChange?(self)
         }
         if !isPrivate {
             BlockStats.shared.audit(webView: webView)
@@ -764,10 +793,25 @@ extension BrowserTab {
     /// Effective zoom (50–200%): per-site override, else the global setting.
     func effectiveTextZoom() -> Double {
         if let host = webView.url?.host {
-            let perSite = UserDefaults.standard.dictionary(forKey: "magdy.zoomPerSite") as? [String: Double] ?? [:]
-            if let site = perSite[host] { return site }
+            if isPrivate, let site = privateTextZooms[host] { return site }
+            if !isPrivate {
+                let perSite = UserDefaults.standard.dictionary(forKey: "magdy.zoomPerSite") as? [String: Double] ?? [:]
+                if let site = perSite[host] { return site }
+            }
         }
         return UserDefaults.standard.object(forKey: BrowserTab.textZoomKey) as? Double ?? 100
+    }
+
+    func setSiteZoom(_ zoom: Double?, for host: String) {
+        if isPrivate {
+            if let zoom {
+                privateTextZooms[host] = zoom
+            } else {
+                privateTextZooms.removeValue(forKey: host)
+            }
+        } else {
+            Self.setSiteZoom(zoom, for: host)
+        }
     }
 
     /// Remembers (or clears, when nil) a per-host zoom.
@@ -786,6 +830,10 @@ extension BrowserTab {
     /// Applies the remembered per-site user agent (desktop/mobile) for the host.
     func applyRememberedUserAgent(for url: URL?) {
         guard let host = url?.host else { return }
+        if isPrivate {
+            webView.customUserAgent = privateUserAgents[host] == "desktop" ? Self.desktopUserAgent : nil
+            return
+        }
         let perSite = UserDefaults.standard.dictionary(forKey: "magdy.uaPerSite") as? [String: String] ?? [:]
         if perSite[host] == "desktop" {
             webView.customUserAgent = Self.desktopUserAgent
@@ -801,6 +849,14 @@ extension BrowserTab {
         var perSite = UserDefaults.standard.dictionary(forKey: "magdy.uaPerSite") as? [String: String] ?? [:]
         perSite[host] = desktop ? "desktop" : "mobile"
         UserDefaults.standard.set(perSite, forKey: "magdy.uaPerSite")
+    }
+
+    func rememberUserAgent(desktop: Bool, for host: String) {
+        if isPrivate {
+            privateUserAgents[host] = desktop ? "desktop" : "mobile"
+        } else {
+            Self.rememberUserAgent(host: host, desktop: desktop)
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 import Foundation
 
 final class TabStore {
+    static let maxSavedTabs = 100
     private(set) var tabs: [BrowserTab] = []
 
     struct SavedTab: Codable {
@@ -39,6 +40,8 @@ final class TabStore {
         guard let data = UserDefaults.standard.data(forKey: "magdy.session"),
               let saved = try? JSONDecoder().decode([SavedTab].self, from: data) else { return [] }
         return saved.filter { URL.webURL(from: $0.url)?.absoluteString == $0.url }
+            .prefix(TabStore.maxSavedTabs)
+            .map { $0 }
     }
 
     func clearSavedSession() {

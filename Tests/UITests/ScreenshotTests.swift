@@ -41,6 +41,7 @@ final class ScreenshotTests: XCTestCase {
 
     func testCaptureScreens() {
         waitUntilHittable(app.buttons["download-video"])
+        waitUntilHittable(app.textFields["address-field"])
         XCTAssertTrue(app.staticTexts["MAGDY"].waitForExistence(timeout: 10))
         snap("01-start")
 

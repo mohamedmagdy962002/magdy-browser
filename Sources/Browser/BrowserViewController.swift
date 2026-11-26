@@ -119,6 +119,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         addressField.delegate = self
         addressField.accessibilityIdentifier = "address-field"
         addressField.accessibilityLabel = L.t("search_placeholder")
+        addressField.isAccessibilityElement = true
         addressField.font = Theme.body(16, weight: .medium)
         addressField.textColor = Theme.textPrimary
         addressField.backgroundColor = .clear
@@ -133,6 +134,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         reloadButton.addTarget(self, action: #selector(reloadTapped), for: .touchUpInside)
         reloadButton.accessibilityIdentifier = "browser-reload"
         reloadButton.accessibilityLabel = "Reload page"
+        reloadButton.isAccessibilityElement = true
         reloadButton.widthAnchor.constraint(equalToConstant: 44).isActive = true
 
         addressRow.addArrangedSubview(addressField)
@@ -145,6 +147,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
         webContainer.translatesAutoresizingMaskIntoConstraints = false
         webContainer.backgroundColor = Theme.canvas
+        webContainer.clipsToBounds = true
 
         toolbar.axis = .horizontal
         toolbar.distribution = .fillEqually
@@ -212,9 +215,13 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         omnibox.layer.cornerRadius = 26
         omnibox.layer.cornerCurve = .continuous
         let omniboxGlass = Theme.liquidGlassView(corner: 26)
+        omniboxGlass.isAccessibilityElement = false
+        omniboxGlass.accessibilityElementsHidden = true
         omnibox.addSubview(omniboxGlass)
         Theme.floatingShadow(omnibox)
         omnibox.translatesAutoresizingMaskIntoConstraints = false
+        omnibox.accessibilityIdentifier = "browser-omnibox"
+        omnibox.isAccessibilityElement = false
 
         let toolbarChrome = UIView()
         // Liquid glass dock, flush with the screen edges and the tab bar below
@@ -232,6 +239,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         view.addSubview(webContainer)
         view.addSubview(omnibox)
         omnibox.addSubview(addressRow)
+        omnibox.accessibilityElements = [addressField, reloadButton]
         view.addSubview(progressBar)
         view.addSubview(toolbarChrome)
         toolbarChrome.addSubview(toolbar)
@@ -279,7 +287,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let omniboxBottom = omnibox.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -8)
         let progressTop = progressBar.topAnchor.constraint(equalTo: omnibox.bottomAnchor)
         let progressTopAlt = progressBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
-        let webTop = webContainer.topAnchor.constraint(equalTo: progressBar.bottomAnchor)
+        let webTop = webContainer.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 2)
         let webTopAlt = webContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
         let webBottom = webContainer.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor)
         let webBottomAlt = webContainer.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -2)
@@ -462,15 +470,16 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             self?.clearSiteData()
         }
         let allowAds = activeTab?.webView.url?.host.map { host -> GlassMenuItem in
-            let allowed = BrowserTab.isAdAllowed(host)
+            let allowed = activeTab?.isAdAllowed(host) == true
             return GlassMenuItem(
                 title: allowed ? "Re-enable Ads on This Site" : "Allow Ads on This Site",
                 image: UIImage(systemName: allowed ? "shield.fill" : "shield.lefthalf.filled.slash"),
                 destructive: false
             ) { [weak self] in
-                BrowserTab.setAdAllowed(host, !allowed)
-                self?.activeTab?.applyNewRuleLists()
-                self?.activeTab?.reload()
+                guard let self, let tab = self.activeTab, tab.webView.url?.host == host else { return }
+                tab.setAdAllowed(!allowed, for: host)
+                tab.applyNewRuleLists()
+                tab.reload()
             }
         }
         let nightMode = GlassMenuItem(
@@ -564,7 +573,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         guard let tab = activeTab, let host = tab.webView.url?.host else { return }
         let current = tab.effectiveTextZoom()
         let newZoom = delta.map { min(200, max(50, current + $0)) }
-        BrowserTab.setSiteZoom(newZoom == UserDefaults.standard.object(forKey: BrowserTab.textZoomKey) as? Double ? nil : newZoom, for: host)
+        tab.setSiteZoom(newZoom == UserDefaults.standard.object(forKey: BrowserTab.textZoomKey) as? Double ? nil : newZoom, for: host)
         tab.applyTextZoomIfNeeded()
     }
 
@@ -594,7 +603,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     // MARK: - Video downloader
 
     @objc private func openVideoDownloader() {
-        let controller = VideoDownloaderViewController()
+        let dataStore = activeTab?.webView.configuration.websiteDataStore ?? .default()
+        let controller = VideoDownloaderViewController(dataStore: dataStore)
         let navigation = UINavigationController(rootViewController: controller)
         if let sheet = navigation.sheetPresentationController {
             sheet.detents = [.medium(), .large()]
@@ -671,8 +681,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         tab.webView.customUserAgent = desktop
             ? BrowserTab.desktopUserAgent
             : nil
-        BrowserTab.rememberUserAgent(host: url.host ?? "", desktop: desktop)
-        tab.webView.load(URLRequest(url: url))
+        tab.rememberUserAgent(desktop: desktop, for: url.host ?? "")
+        tab.load(url: url)
     }
 
     private func openInSafari() {
@@ -749,7 +759,6 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     }
 
     private func activate(_ tab: BrowserTab) {
-        store.persist()
         activeTab?.webView.removeFromSuperview()
         activeTab = tab
         tab.lastActivatedAt = Date()
@@ -769,9 +778,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
                 UIImage(systemName: loading ? "xmark" : "arrow.clockwise"),
                 for: .normal
             )
-            if !loading {
-                self.store.persist()
-            }
+        }
+        tab.onSessionURLChange = { [weak self] changedTab in
+            guard let self, !changedTab.isPrivate else { return }
+            self.store.persist()
         }
         tab.onProgress = { [weak self] changedTab, progress in
             guard let self, self.activeTab === changedTab else { return }
@@ -838,6 +848,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         ]
         webContainer.addSubview(tab.webView)
         NSLayoutConstraint.activate(webViewConstraints)
+        view.bringSubviewToFront(omnibox)
+        view.bringSubviewToFront(progressBar)
 
         // Apply global page styles to an already-loaded tab (they are per-webView
         // injections, so switching tabs must re-apply them).
@@ -1250,7 +1262,7 @@ extension BrowserViewController {
     }
 
     private func saveToReadingList() {
-        guard let tab = activeTab else { return }
+        guard let tab = activeTab, let sourceURL = tab.webView.url else { return }
         ReaderMode.extract(from: tab.webView) { result in
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -1259,7 +1271,7 @@ extension BrowserViewController {
                 case .success(let article):
                     ReadingListStore.shared.add(
                         title: article.title,
-                        url: tab.webView.url?.absoluteString ?? "",
+                        url: article.url ?? sourceURL.absoluteString,
                         paragraphs: article.paragraphs
                     )
                     message = "Saved to Reading List"

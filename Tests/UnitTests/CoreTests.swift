@@ -86,7 +86,7 @@ final class CoreTests: XCTestCase {
             }
             completion.fulfill()
         }
-        _ = request.addCancellationHandler { _ in
+        _ = request.addCancellationHandler {
             request.finish(.success(URL(string: "https://example.com/video.mp4")!))
         }
         request.cancel()
@@ -123,6 +123,33 @@ final class CoreTests: XCTestCase {
             version: 1,
             defaults: [:],
             history: try JSONEncoder().encode([entry])
+        )
+        let data = try JSONEncoder().encode(backup)
+        XCTAssertFalse(BackupRestore.restore(from: data))
+    }
+
+    func testBackupExcludesPlaybackPositions() throws {
+        let key = "magdy.playback./private/document.mp4"
+        UserDefaults.standard.set(12.0, forKey: key)
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+
+        let data = try XCTUnwrap(BackupRestore.exportData())
+        let backup = try JSONDecoder().decode(BackupRestore.Backup.self, from: data)
+        XCTAssertNil(backup.defaults[key])
+    }
+
+    func testBackupRejectsOversizedSession() throws {
+        let tabs = (0...TabStore.maxSavedTabs).map {
+            TabStore.SavedTab(url: "https://example.com/\($0)")
+        }
+        let session = try JSONEncoder().encode(tabs)
+        let encoded = try PropertyListSerialization.data(
+            fromPropertyList: session, format: .binary, options: 0
+        )
+        let backup = BackupRestore.Backup(
+            version: 1,
+            defaults: ["magdy.session": encoded],
+            history: nil
         )
         let data = try JSONEncoder().encode(backup)
         XCTAssertFalse(BackupRestore.restore(from: data))
