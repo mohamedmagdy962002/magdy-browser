@@ -229,7 +229,7 @@ extension DownloadOptionsSheet: UIDocumentPickerDelegate {
         let hasAccess = folder.startAccessingSecurityScopedResource()
         defer { if hasAccess { folder.stopAccessingSecurityScopedResource() } }
         do {
-            let bookmark = try folder.bookmarkData(options: .withSecurityScope)
+            let bookmark = try folder.bookmarkData(options: .minimalBookmark)
             UserDefaults.standard.set(bookmark, forKey: DownloadManager.folderBookmarkKey)
             UserDefaults.standard.set(folder.lastPathComponent, forKey: DownloadManager.folderBookmarkKey + ".name")
             folderButton.setTitle(folder.lastPathComponent, for: .normal)

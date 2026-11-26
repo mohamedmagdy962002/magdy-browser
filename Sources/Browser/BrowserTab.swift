@@ -122,7 +122,8 @@ final class BrowserTab: NSObject {
             controller.remove(list)
             appliedRuleLists.removeValue(forKey: id)
         }
-        for list in ContentBlocker.shared.ruleLists where activeIDs.contains(list.identifier), appliedRuleLists[list.identifier] == nil {
+        for list in ContentBlocker.shared.ruleLists
+            where activeIDs.contains(list.identifier) && appliedRuleLists[list.identifier] == nil {
             appliedRuleLists[list.identifier] = list
             controller.add(list)
         }
