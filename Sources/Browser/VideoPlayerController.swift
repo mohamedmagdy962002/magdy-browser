@@ -801,6 +801,7 @@ final class VideoPlayerController: UIViewController {
                 }
                 do {
                     try data.write(to: output, options: .atomic)
+                    NotificationCenter.default.post(name: .magdyLibraryChanged, object: output)
                     self.toast("Frame saved to Downloads")
                 } catch {
                     self.toast("Could not save the frame")

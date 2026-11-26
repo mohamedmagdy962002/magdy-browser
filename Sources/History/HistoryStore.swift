@@ -133,10 +133,12 @@ final class HistoryStore {
         let snapshot = makeSnapshot()
         let saved = persistenceQueue.sync { persist(snapshot) }
         if !saved { entries = previous }
+        if saved { NotificationCenter.default.post(name: .magdyLibraryChanged, object: self) }
         return saved
     }
 
     private func scheduleSave() {
+        NotificationCenter.default.post(name: .magdyLibraryChanged, object: self)
         pendingSave?.cancel()
         let snapshot = makeSnapshot()
         let work = DispatchWorkItem { [weak self] in self?.save(snapshot) }

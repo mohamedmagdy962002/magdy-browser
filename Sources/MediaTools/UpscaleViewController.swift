@@ -105,6 +105,7 @@ final class UpscaleViewController: UIViewController {
                     case .success(let output):
                         self.progressView.progress = 1
                         self.statusLabel.text = "Saved \(output.lastPathComponent)"
+                        NotificationCenter.default.post(name: .magdyLibraryChanged, object: output)
                     case .failure(let error):
                         self.progressView.progress = 0
                         self.statusLabel.text = "Failed: \(error.localizedDescription)"

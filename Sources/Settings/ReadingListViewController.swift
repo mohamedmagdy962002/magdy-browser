@@ -1,55 +1,6 @@
 import Foundation
 import UIKit
 
-/// Save-for-later articles, stored offline in the app sandbox.
-final class ReadingListStore {
-    struct Item: Codable {
-        let id: UUID
-        var title: String
-        var url: String
-        var paragraphs: [String]
-        var addedAt: Date
-    }
-
-    static let shared = ReadingListStore()
-
-    private let key = "magdy.readingList"
-
-    private(set) var items: [Item] = []
-
-    init() {
-        load()
-    }
-
-    func add(title: String, url: String, paragraphs: [String]) {
-        let item = Item(id: UUID(), title: title, url: url, paragraphs: paragraphs, addedAt: Date())
-        items.insert(item, at: 0)
-        save()
-    }
-
-    func remove(_ item: Item) {
-        items.removeAll { $0.id == item.id }
-        save()
-    }
-
-    private func load() {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let decoded = try? JSONDecoder().decode([Item].self, from: data) else { return }
-        items = decoded
-    }
-
-    private func save() {
-        if let data = try? JSONEncoder().encode(items) {
-            UserDefaults.standard.set(data, forKey: key)
-        }
-    }
-
-    /// Re-reads from disk (used after a backup restore so the UI and next save see restored data).
-    func reloadFromDisk() {
-        load()
-    }
-}
-
 /// Offline reading list screen.
 final class ReadingListViewController: UITableViewController {
 

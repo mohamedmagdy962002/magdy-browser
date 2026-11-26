@@ -130,6 +130,14 @@ final class DownloadManager: NSObject {
         return customFolderName ?? "Magdy Downloads"
     }
 
+    func withReadOnlyLibraryFolder<T>(_ body: (URL?) throws -> T) rethrows -> T {
+        if let custom = resolveCustomFolder() {
+            defer { custom.stopAccessingSecurityScopedResource() }
+            return try body(custom)
+        }
+        return try body(nil)
+    }
+
     private var customFolderName: String? {
         UserDefaults.standard.string(forKey: Self.folderBookmarkKey + ".name")
     }

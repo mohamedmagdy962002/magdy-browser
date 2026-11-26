@@ -19,7 +19,7 @@ final class NavigationTests: XCTestCase {
         super.tearDown()
     }
 
-    func testFourHubNavigationRetainsBrowserState() {
+    func testFourHubNavigationRetainsBrowserState() throws {
         waitForHittable(app.textFields["address-field"])
         guard app.tabBars.firstMatch.exists else {
             if UIDevice.current.userInterfaceIdiom == .pad {
@@ -55,7 +55,7 @@ final class NavigationTests: XCTestCase {
         XCTAssertEqual(tabButton.value as? String, "2")
     }
 
-    func testRegularSidebarRetainsBrowserState() {
+    func testRegularSidebarRetainsBrowserState() throws {
         waitForHittable(app.textFields["address-field"])
         guard !app.tabBars.firstMatch.exists else {
             if UIDevice.current.userInterfaceIdiom == .pad {
@@ -83,7 +83,7 @@ final class NavigationTests: XCTestCase {
         XCTAssertEqual(browserTabs.value as? String, "2")
     }
 
-    func testMoreExplainsLocalDataAndNoAccountModel() {
+    func testMoreExplainsLocalDataAndNoAccountModel() throws {
         guard app.tabBars.firstMatch.waitForExistence(timeout: 5) else {
             throw XCTSkip("More is in the sidebar in regular width.")
         }

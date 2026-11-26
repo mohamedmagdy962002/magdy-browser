@@ -124,10 +124,12 @@ final class FavoritesStore {
     private func save() {
         guard let data = try? JSONEncoder().encode(favorites) else { return }
         UserDefaults.standard.set(data, forKey: UserDefaultsKey.favorites)
+        NotificationCenter.default.post(name: .magdyLibraryChanged, object: self)
     }
 
     /// Re-reads from disk (used after a backup restore so the UI and next save see restored data).
     func reloadFromDisk() {
         load()
+        NotificationCenter.default.post(name: .magdyLibraryChanged, object: self)
     }
 }
