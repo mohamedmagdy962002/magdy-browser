@@ -129,8 +129,10 @@ final class LibraryTests: XCTestCase {
         XCTAssertEqual(snapshot.counts.total, 3)
         let saved = try XCTUnwrap(snapshot.items(query: "Saved").first)
         XCTAssertEqual(saved.id, .readingList(id))
-        XCTAssertFalse(saved.isAvailable)
+        XCTAssertTrue(saved.isAvailable)
         XCTAssertEqual(saved.payload != nil, true)
+        let emptyItem = try XCTUnwrap(snapshot.items.first { $0.title == "Empty" })
+        XCTAssertFalse(emptyItem.isAvailable)
         XCTAssertEqual(snapshot.items(query: "watch", sources: [.favorites]).count, 1)
         XCTAssertTrue(snapshot.items(query: "watch", sources: [.history]).isEmpty)
     }

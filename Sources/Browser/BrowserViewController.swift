@@ -223,8 +223,6 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         Theme.floatingShadow(omnibox)
         omnibox.translatesAutoresizingMaskIntoConstraints = false
         omnibox.accessibilityIdentifier = "browser-omnibox"
-        omnibox.isAccessibilityElement = false
-        omnibox.accessibilityElements = [addressField, reloadButton]
 
         let toolbarChrome = UIView()
         // Liquid glass dock, flush with the screen edges and the tab bar below
