@@ -4,11 +4,26 @@ import XCTest
 /// the main screens and writes screenshots to SHOT_DIR for artifact upload.
 final class ScreenshotTests: XCTestCase {
 
+    private let shotDirectory = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("build/shots")
+
     private func snap(_ app: XCUIApplication, _ name: String) {
-        let dir = ProcessInfo.processInfo.environment["SHOT_DIR"] ?? NSTemporaryDirectory()
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        let shot = XCUIScreen.main.screenshot()
-        try? shot.pngRepresentation.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
+        do {
+            try FileManager.default.createDirectory(at: shotDirectory, withIntermediateDirectories: true)
+            try app.debugDescription.write(
+                to: shotDirectory.appendingPathComponent("\(name)-ui.txt"),
+                atomically: true,
+                encoding: .utf8
+            )
+            try XCUIScreen.main.screenshot().pngRepresentation.write(
+                to: shotDirectory.appendingPathComponent("\(name).png")
+            )
+        } catch {
+            XCTFail("Unable to capture \(name): \(error)")
+        }
     }
 
     func testCaptureScreens() {

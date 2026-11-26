@@ -77,8 +77,6 @@ jobs:
             -destination "platform=iOS Simulator,id=$UDID" \
             -derivedDataPath build/TestData \
             CODE_SIGNING_ALLOWED=NO
-        env:
-          SHOT_DIR: ${{ github.workspace }}/build/shots
 
       - name: Collect screenshots
         if: always()
@@ -90,4 +88,4 @@ jobs:
         with:
           name: simulator-screenshots
           path: build/shots
-          if-no-files-found: warn
+          if-no-files-found: error
