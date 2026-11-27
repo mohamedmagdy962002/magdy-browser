@@ -111,6 +111,7 @@ final class LibraryHeaderView: UICollectionReusableView {
     private let filtersScrollView = UIScrollView()
     private let filtersStack = UIStackView()
     private var filterChips: [LibraryFilter: FilterChip] = [:]
+    private var lastFilter: LibraryFilter?
     var onFilter: ((LibraryFilter) -> Void)?
 
     override init(frame: CGRect) {
@@ -177,6 +178,7 @@ final class LibraryHeaderView: UICollectionReusableView {
     override func prepareForReuse() {
         super.prepareForReuse()
         searchBar.delegate = nil
+        lastFilter = nil
         onFilter = nil
     }
 
@@ -187,6 +189,11 @@ final class LibraryHeaderView: UICollectionReusableView {
     func clearSearch() {
         searchBar.text = ""
         searchBar.resignFirstResponder()
+    }
+
+    func restoreSearchText(_ text: String) {
+        guard searchBar.text != text, !searchBar.isFirstResponder else { return }
+        searchBar.text = text
     }
 
     func configure(count: Int, filter: LibraryFilter, delegate: UISearchBarDelegate, onFilter: @escaping (LibraryFilter) -> Void) {
@@ -202,10 +209,13 @@ final class LibraryHeaderView: UICollectionReusableView {
             chip.isSelected = option == filter
             chip.accessibilityLabel = option.title
         }
-        filtersScrollView.layoutIfNeeded()
-        if let chip = filterChips[filter] {
-            let bounds = chip.convert(chip.bounds, to: filtersScrollView)
-            filtersScrollView.scrollRectToVisible(bounds, animated: false)
+        if lastFilter != filter {
+            filtersScrollView.layoutIfNeeded()
+            if let chip = filterChips[filter] {
+                let bounds = chip.convert(chip.bounds, to: filtersScrollView)
+                filtersScrollView.scrollRectToVisible(bounds, animated: false)
+            }
+            lastFilter = filter
         }
     }
 

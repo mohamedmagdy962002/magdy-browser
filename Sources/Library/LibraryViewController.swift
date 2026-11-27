@@ -24,6 +24,7 @@ final class LibraryViewController: UIViewController {
     }()
     private var filter: LibraryFilter = .all
     private var sort: LibrarySnapshot.SortOrder = .recent
+    private var searchQuery = ""
     private var visibleItems: [LibraryItem] = []
     private var itemLookup: [LibraryItem.Identity: LibraryItem] = [:]
     private var emptyMode: EmptyMode?
@@ -150,8 +151,7 @@ final class LibraryViewController: UIViewController {
     }
 
     private var currentQuery: String {
-        guard let header = visibleHeader() else { return "" }
-        return header.searchText
+        searchQuery
     }
 
     private func configure(_ cell: LibraryMediaCell, with item: LibraryItem) {
@@ -171,6 +171,7 @@ final class LibraryViewController: UIViewController {
             self?.filter = filter
             self?.rebuild(animated: false)
         }
+        header.restoreSearchText(searchQuery)
     }
 
     private func refreshVisibleHeader() {
@@ -212,6 +213,7 @@ final class LibraryViewController: UIViewController {
 
     private func showAll() {
         filter = .all
+        searchQuery = ""
         visibleHeader()?.clearSearch()
         rebuild(animated: false)
     }
@@ -308,6 +310,7 @@ extension LibraryViewController: UICollectionViewDelegate {
 
 extension LibraryViewController: UISearchBarDelegate {
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        searchQuery = searchText
         rebuild(animated: false)
     }
 
@@ -316,6 +319,7 @@ extension LibraryViewController: UISearchBarDelegate {
     }
 
     func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        searchQuery = ""
         searchBar.text = ""
         searchBar.resignFirstResponder()
         rebuild(animated: false)

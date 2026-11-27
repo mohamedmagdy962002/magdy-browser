@@ -21,14 +21,11 @@ final class NavigationTests: XCTestCase {
     }
 
     func testFourHubNavigationRetainsBrowserState() throws {
-        waitForHittable(app.textFields["address-field"])
-        guard app.tabBars.firstMatch.exists else {
-            if UIDevice.current.userInterfaceIdiom == .pad {
-                throw XCTSkip("Compact navigation is not visible in regular width.")
-            }
-            XCTFail("Compact navigation is missing on iPhone.")
-            return
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            throw XCTSkip("Compact navigation is not visible on iPad.")
         }
+        waitForHittable(app.textFields["address-field"])
+        XCTAssertTrue(app.tabBars.firstMatch.exists)
         let tabButton = app.buttons["browser-tabs"]
         XCTAssertEqual(tabButton.value as? String, "1")
         XCTAssertEqual(app.tabBars.buttons.count, 4)
@@ -45,7 +42,7 @@ final class NavigationTests: XCTestCase {
 
         let search = app.searchFields["library-search"]
         search.tap()
-        search.typeText("unlikely search result")
+        search.typeText("zzzz")
         waitForHittable(app.otherElements["library-no-results"])
         app.buttons["Show All"].tap()
         waitForHittable(library)
@@ -76,14 +73,11 @@ final class NavigationTests: XCTestCase {
     }
 
     func testRegularSidebarRetainsBrowserState() throws {
-        waitForHittable(app.textFields["address-field"])
-        guard !app.tabBars.firstMatch.exists else {
-            if UIDevice.current.userInterfaceIdiom == .pad {
-                XCTFail("Sidebar navigation is missing on iPad.")
-                return
-            }
-            throw XCTSkip("Sidebar navigation is not visible in compact width.")
+        guard UIDevice.current.userInterfaceIdiom == .pad else {
+            throw XCTSkip("Sidebar navigation is not visible on iPhone.")
         }
+        waitForHittable(app.textFields["address-field"])
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
 
         let browserTabs = app.buttons["browser-tabs"]
         XCTAssertEqual(browserTabs.value as? String, "1")

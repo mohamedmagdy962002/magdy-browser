@@ -54,6 +54,13 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertEqual(result, .completed)
     }
 
+    private func dismissKeyboardIntroductionIfNeeded() {
+        let continueButton = app.buttons["Continue"]
+        if continueButton.waitForExistence(timeout: 1) {
+            continueButton.tap()
+        }
+    }
+
     func testCaptureScreens() {
         waitUntilHittable(app.buttons["download-video"])
         waitUntilHittable(app.textFields["address-field"])
@@ -77,6 +84,7 @@ final class ScreenshotTests: XCTestCase {
         waitUntilHittable(app.textFields["address-field"])
         app.buttons["start-search"].tap()
         waitUntilHittable(app.keyboards.firstMatch)
+        dismissKeyboardIntroductionIfNeeded()
         app.textFields["address-field"].typeText("magdy")
 
         let suggestions = app.tables["search-suggestions"]
@@ -116,6 +124,7 @@ final class ScreenshotTests: XCTestCase {
         waitUntilHittable(app.textFields["address-field"])
         app.textFields["address-field"].tap()
         waitUntilHittable(app.keyboards.firstMatch)
+        dismissKeyboardIntroductionIfNeeded()
         app.textFields["address-field"].typeText("magdy")
         XCTAssertFalse(app.tables["search-suggestions"].isHittable)
     }

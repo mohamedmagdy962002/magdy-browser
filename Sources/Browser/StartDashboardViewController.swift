@@ -31,6 +31,7 @@ final class StartDashboardViewController: UIViewController, UICollectionViewDele
     private let dateFormatter = DateFormatter()
     private var itemsByID: [LibraryItem.Identity: LibraryItem] = [:]
     private var isPrivate = false
+    private var shouldResetScrollOffset = false
 
     var onSearch: (() -> Void)?
     var onDownloadVideo: (() -> Void)?
@@ -111,6 +112,7 @@ final class StartDashboardViewController: UIViewController, UICollectionViewDele
         guard self.isPrivate != isPrivate else { return }
         self.isPrivate = isPrivate
         if isViewLoaded {
+            shouldResetScrollOffset = true
             rebuild(animated: false)
         }
     }
@@ -168,7 +170,12 @@ final class StartDashboardViewController: UIViewController, UICollectionViewDele
             }
         }
         dataSource.apply(snapshot, animatingDifferences: animated) { [weak self] in
-            self?.refreshVisibleViews()
+            guard let self else { return }
+            self.refreshVisibleViews()
+            if self.shouldResetScrollOffset {
+                self.collectionView.setContentOffset(.zero, animated: false)
+                self.shouldResetScrollOffset = false
+            }
         }
     }
 
