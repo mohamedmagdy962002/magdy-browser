@@ -294,23 +294,13 @@ final class StartDashboardViewController: UIViewController, UICollectionViewDele
                 widthDimension: .fractionalWidth(1),
                 heightDimension: .estimated(sectionIndex == 0 ? 390 : 52)
             )
-            if sectionIndex == 0 {
-                section.boundarySupplementaryItems = [
-                    NSCollectionLayoutBoundarySupplementaryItem(
-                        layoutSize: headerSize,
-                        elementKind: headerKind,
-                        alignment: .top
-                    )
-                ]
-            } else {
-                section.supplementaryItems = [
-                    NSCollectionLayoutSupplementaryItem(
-                        layoutSize: headerSize,
-                        elementKind: headerKind,
-                        alignment: .top
-                    )
-                ]
-            }
+            section.boundarySupplementaryItems = [
+                NSCollectionLayoutBoundarySupplementaryItem(
+                    layoutSize: headerSize,
+                    elementKind: headerKind,
+                    alignment: .top
+                )
+            ]
             return section
         }, configuration: configuration)
     }
