@@ -13,7 +13,6 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
     private let omnibox = UIView()
     private let webContainer = UIView()
-    private let addressRow = UIStackView()
     private let addressField = UITextField()
     private let reloadButton = UIButton(type: .system)
     private let menuButton = UIButton(type: .system)
@@ -29,11 +28,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     /// Position anchor sets swapped by the "Search Bar Position" setting.
     private var topConstraints: [NSLayoutConstraint] = []
     private var bottomConstraints: [NSLayoutConstraint] = []
-    /// Frosted card behind the suggestion rows.
-    private var suggestionsGlass: UIVisualEffectView?
+    private var suggestionsPanel: UIView?
     private let backButton = UIButton(type: .system)
     private let forwardButton = UIButton(type: .system)
-    private let downloadFAB = UIButton(type: .system)
+    private lazy var startDashboard = StartDashboardViewController()
 
     private weak var sessionRestoreAlert: UIAlertController?
     private var pendingIncomingDownloads: [(url: URL, completion: (() -> Void)?)] = []
@@ -50,7 +48,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         navigationController?.navigationBar.isTranslucent = false
         view.accessibilityIdentifier = "browser-screen"
         navigationController?.setNavigationBarHidden(traitCollection.horizontalSizeClass != .regular, animated: false)
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = Theme.canvas
         buildUI()
         openNewTab(privateMode: UserDefaultsKey.bool(UserDefaultsKey.defaultPrivate, default: false))
         offerSessionRestore()
@@ -108,10 +106,6 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     // MARK: - Layout
 
     private func buildUI() {
-        addressRow.axis = .horizontal
-        addressRow.spacing = 8
-        addressRow.translatesAutoresizingMaskIntoConstraints = false
-
         addressField.placeholder = L.t("search_placeholder")
         addressField.keyboardType = .webSearch
         addressField.returnKeyType = .go
@@ -138,9 +132,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         reloadButton.accessibilityLabel = "Reload page"
         reloadButton.isAccessibilityElement = true
         reloadButton.widthAnchor.constraint(equalToConstant: 44).isActive = true
-
-        addressRow.addArrangedSubview(addressField)
-        addressRow.addArrangedSubview(reloadButton)
+        addressField.translatesAutoresizingMaskIntoConstraints = false
+        reloadButton.translatesAutoresizingMaskIntoConstraints = false
+        addressField.accessibilityElementsHidden = false
+        reloadButton.accessibilityElementsHidden = false
 
         progressBar.translatesAutoresizingMaskIntoConstraints = false
         progressBar.isHidden = true
@@ -150,6 +145,38 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         webContainer.translatesAutoresizingMaskIntoConstraints = false
         webContainer.backgroundColor = Theme.canvas
         webContainer.clipsToBounds = true
+
+        addChild(startDashboard)
+        startDashboard.view.translatesAutoresizingMaskIntoConstraints = false
+        startDashboard.view.isHidden = true
+        startDashboard.onSearch = { [weak self] in self?.addressField.becomeFirstResponder() }
+        startDashboard.onDownloadVideo = { [weak self] in self?.openVideoDownloader() }
+        startDashboard.onQuickAction = { [weak self] in self?.performQuickAction($0) }
+        startDashboard.onOpenItem = { [weak self] item in
+            guard let self else { return }
+            LibraryActions.open(item, from: self)
+        }
+        startDashboard.actionsForItem = { [weak self] item, sourceView in
+            guard let self else { return [] }
+            return LibraryActions.actions(for: item, from: self, sourceView: sourceView)
+        }
+        startDashboard.onSeeAll = { [weak self] section in
+            guard let self else { return }
+            switch section {
+            case .ready, .empty: self.appRouteHandler?.navigate(to: .library)
+            case .downloads: self.appRouteHandler?.navigate(to: .downloads)
+            case .favorites: self.appRouteHandler?.navigate(to: .favorites)
+            case .recent: self.appRouteHandler?.navigate(to: .history)
+            }
+        }
+        webContainer.addSubview(startDashboard.view)
+        NSLayoutConstraint.activate([
+            startDashboard.view.topAnchor.constraint(equalTo: webContainer.topAnchor),
+            startDashboard.view.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+            startDashboard.view.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+            startDashboard.view.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor)
+        ])
+        startDashboard.didMove(toParent: self)
 
         toolbar.axis = .horizontal
         toolbar.distribution = .fillEqually
@@ -171,7 +198,6 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         tabButton.accessibilityIdentifier = "browser-tabs"
         tabButton.accessibilityLabel = "Show tabs"
 
-        // Periwinkle glass accent circle for "new tab" (Stitch Liquid ref).
         let newTabButton = UIButton(type: .system)
         newTabButton.setImage(UIImage(systemName: "plus"), for: .normal)
         newTabButton.tintColor = .white
@@ -195,71 +221,41 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         toolbar.addArrangedSubview(newTabButton)
         toolbar.addArrangedSubview(menuButton)
 
-        // Floating primary action, shown on the start page.
-        downloadFAB.setTitle("  Download video", for: .normal)
-        downloadFAB.setImage(UIImage(systemName: "arrow.down.circle.fill"), for: .normal)
-        downloadFAB.titleLabel?.font = Theme.headline(15, weight: .semibold)
-        downloadFAB.tintColor = .white
-        downloadFAB.setTitleColor(.white, for: .normal)
-        downloadFAB.backgroundColor = Theme.primary
-        downloadFAB.layer.cornerRadius = 26
-        downloadFAB.layer.cornerCurve = .continuous
-        downloadFAB.contentEdgeInsets = UIEdgeInsets(top: 12, left: 18, bottom: 12, right: 20)
-        downloadFAB.addTarget(self, action: #selector(openVideoDownloader), for: .touchUpInside)
-        downloadFAB.accessibilityIdentifier = "download-video"
-        downloadFAB.accessibilityLabel = "Download video"
-        downloadFAB.translatesAutoresizingMaskIntoConstraints = false
-        downloadFAB.isHidden = true
-
-        // Liquid glass skin: frosted blur under the address row. No clipping on
-        // the host — it would kill the drop shadow that separates it from pages.
-        omnibox.backgroundColor = .clear
+        omnibox.backgroundColor = Theme.field
         omnibox.layer.cornerRadius = 26
         omnibox.layer.cornerCurve = .continuous
-        let omniboxGlass = Theme.liquidGlassView(corner: 26)
-        omniboxGlass.isAccessibilityElement = false
-        omniboxGlass.accessibilityElementsHidden = true
-        omnibox.addSubview(omniboxGlass)
-        Theme.floatingShadow(omnibox)
+        omnibox.layer.borderWidth = 1
+        omnibox.layer.borderColor = Theme.hairline.cgColor
+        omnibox.isAccessibilityElement = false
+        omnibox.accessibilityElementsHidden = true
         omnibox.translatesAutoresizingMaskIntoConstraints = false
-        omnibox.accessibilityIdentifier = "browser-omnibox"
 
         let toolbarChrome = UIView()
-        // Liquid glass dock, flush with the screen edges and the tab bar below
-        // (rounded top corners only) so the two rows read as one modern bottom bar.
-        toolbarChrome.backgroundColor = .clear
+        toolbarChrome.backgroundColor = Theme.surface
         toolbarChrome.layer.cornerRadius = 22
         toolbarChrome.layer.cornerCurve = .continuous
         toolbarChrome.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        let toolbarGlass = Theme.liquidGlassView(corner: 22)
-        toolbarGlass.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        toolbarChrome.addSubview(toolbarGlass)
-        Theme.floatingShadow(toolbarChrome)
+        toolbarChrome.layer.borderWidth = 1
+        toolbarChrome.layer.borderColor = Theme.hairline.cgColor
         toolbarChrome.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(webContainer)
         view.addSubview(omnibox)
-        omnibox.addSubview(addressRow)
+        view.addSubview(addressField)
+        view.addSubview(reloadButton)
         view.addSubview(progressBar)
         view.addSubview(toolbarChrome)
         toolbarChrome.addSubview(toolbar)
-        view.addSubview(downloadFAB)
 
-        NSLayoutConstraint.activate([
-            omniboxGlass.topAnchor.constraint(equalTo: omnibox.topAnchor),
-            omniboxGlass.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor),
-            omniboxGlass.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor),
-            omniboxGlass.bottomAnchor.constraint(equalTo: omnibox.bottomAnchor),
-
-            toolbarGlass.topAnchor.constraint(equalTo: toolbarChrome.topAnchor),
-            toolbarGlass.leadingAnchor.constraint(equalTo: toolbarChrome.leadingAnchor),
-            toolbarGlass.trailingAnchor.constraint(equalTo: toolbarChrome.trailingAnchor),
-            toolbarGlass.bottomAnchor.constraint(equalTo: toolbarChrome.bottomAnchor)
-        ])
-
-        // Omnibox suggestions overlay — frosted glass card behind the rows.
-        let suggestionsGlass = Theme.liquidGlassView(corner: 22)
-        self.suggestionsGlass = suggestionsGlass
+        let suggestionsPanel = UIView()
+        suggestionsPanel.backgroundColor = Theme.surface
+        suggestionsPanel.layer.cornerRadius = 22
+        suggestionsPanel.layer.cornerCurve = .continuous
+        suggestionsPanel.layer.borderWidth = 1
+        suggestionsPanel.layer.borderColor = Theme.hairline.cgColor
+        suggestionsPanel.isAccessibilityElement = false
+        suggestionsPanel.accessibilityElementsHidden = true
+        self.suggestionsPanel = suggestionsPanel
         suggestionsTable.backgroundColor = .clear
         suggestionsTable.layer.cornerRadius = 22
         suggestionsTable.layer.cornerCurve = .continuous
@@ -269,14 +265,12 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         suggestionsTable.delegate = self
         suggestionsTable.accessibilityIdentifier = "search-suggestions"
         suggestionsTable.isHidden = true
-        suggestionsGlass.isHidden = true
+        suggestionsPanel.isHidden = true
         suggestionsTable.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(suggestionsPanel)
         view.addSubview(suggestionsTable)
-        suggestionsGlass.translatesAutoresizingMaskIntoConstraints = false
-        view.insertSubview(suggestionsGlass, belowSubview: suggestionsTable)
+        suggestionsPanel.translatesAutoresizingMaskIntoConstraints = false
         view.bringSubviewToFront(suggestionsTable)
-
-        Theme.fabShadow(downloadFAB)
 
         view.addSubview(playerBanner)
 
@@ -295,10 +289,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         let suggestionsBottom = suggestionsTable.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -8)
         let bannerTop = playerBanner.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 6)
         let bannerBottom = playerBanner.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -6)
-        let fabBottom = downloadFAB.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -16)
-        let fabBottomAlt = downloadFAB.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -16)
-        topConstraints = [omniboxTop, progressTop, webTop, webBottom, suggestionsTop, bannerTop, fabBottom]
-        bottomConstraints = [omniboxBottom, progressTopAlt, webTopAlt, webBottomAlt, suggestionsBottom, bannerBottom, fabBottomAlt]
+        topConstraints = [omniboxTop, progressTop, webTop, webBottom, suggestionsTop, bannerTop]
+        bottomConstraints = [omniboxBottom, progressTopAlt, webTopAlt, webBottomAlt, suggestionsBottom, bannerBottom]
         NSLayoutConstraint.activate(top ? topConstraints : bottomConstraints)
 
         NSLayoutConstraint.activate([
@@ -307,13 +299,13 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             omnibox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             omnibox.heightAnchor.constraint(equalToConstant: 52),
 
-            addressRow.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor, constant: 8),
-            addressRow.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: -8),
-            addressRow.centerYAnchor.constraint(equalTo: omnibox.centerYAnchor),
-            addressRow.heightAnchor.constraint(equalToConstant: 44),
-
-            downloadFAB.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            downloadFAB.heightAnchor.constraint(equalToConstant: 48),
+            addressField.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor, constant: 12),
+            addressField.trailingAnchor.constraint(equalTo: reloadButton.leadingAnchor, constant: -4),
+            addressField.centerYAnchor.constraint(equalTo: omnibox.centerYAnchor),
+            addressField.heightAnchor.constraint(equalToConstant: 44),
+            reloadButton.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: -4),
+            reloadButton.centerYAnchor.constraint(equalTo: omnibox.centerYAnchor),
+            reloadButton.heightAnchor.constraint(equalToConstant: 44),
 
             // Layout guards: the omnibox can never stretch beyond its capsule,
             // no matter which position set is active (fixes bottom-mode stretch).
@@ -346,10 +338,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             playerBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             playerBanner.heightAnchor.constraint(equalToConstant: 46),
 
-            suggestionsGlass.topAnchor.constraint(equalTo: suggestionsTable.topAnchor),
-            suggestionsGlass.leadingAnchor.constraint(equalTo: suggestionsTable.leadingAnchor),
-            suggestionsGlass.trailingAnchor.constraint(equalTo: suggestionsTable.trailingAnchor),
-            suggestionsGlass.bottomAnchor.constraint(equalTo: suggestionsTable.bottomAnchor)
+            suggestionsPanel.topAnchor.constraint(equalTo: suggestionsTable.topAnchor),
+            suggestionsPanel.leadingAnchor.constraint(equalTo: suggestionsTable.leadingAnchor),
+            suggestionsPanel.trailingAnchor.constraint(equalTo: suggestionsTable.trailingAnchor),
+            suggestionsPanel.bottomAnchor.constraint(equalTo: suggestionsTable.bottomAnchor)
         ])
 
         // Swipe on the toolbar switches tabs.
@@ -393,6 +385,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             guard let self else { return }
             self.addressField.placeholder = L.t("search_placeholder")
             self.addressField.accessibilityLabel = L.t("search_placeholder")
+            self.startDashboard.refreshLocalizedContent()
         }
     }
 
@@ -848,6 +841,10 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
                 for: .normal
             )
         }
+        tab.onPresentationChange = { [weak self] changedTab in
+            guard let self, self.activeTab === changedTab else { return }
+            self.syncStartDashboard()
+        }
         tab.onSessionURLChange = { [weak self] changedTab in
             guard let self, !changedTab.isPrivate else { return }
             self.store.persist()
@@ -872,24 +869,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
             self?.open(url: url, privateMode: privateMode)
         }
         tab.onQuickAction = { [weak self] action in
-            guard let self else { return }
-            switch action {
-            case "private": self.openNewTab(privateMode: true)
-            case "qr": self.openQRScanner()
-            case "voice": self.openVoiceSearch()
-            case "search": self.addressField.becomeFirstResponder()
-            case "unsupported-video":
-                let alert = UIAlertController(
-                    title: "Unsupported video stream",
-                    message: "This video uses a protected, blob, or adaptive stream that cannot be opened directly. Try Download Media from Page.",
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
-                self.present(alert, animated: true)
-            case "downloads":
-                self.appRouteHandler?.navigate(to: .downloads)
-            default: break
-            }
+            self?.performQuickAction(action)
         }
 
         tab.onPresentAlert = { [weak self] alert in
@@ -916,7 +896,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         ]
         webContainer.addSubview(tab.webView)
         NSLayoutConstraint.activate(webViewConstraints)
-        view.bringSubviewToFront(omnibox)
+        webContainer.bringSubviewToFront(startDashboard.view)
+        view.bringSubviewToFront(addressField)
+        view.bringSubviewToFront(reloadButton)
         view.bringSubviewToFront(progressBar)
 
         // Apply global page styles to an already-loaded tab (they are per-webView
@@ -942,12 +924,44 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         tabButton.accessibilityValue = "\(store.tabs.count)"
         backButton.isEnabled = tab.webView.canGoBack
         forwardButton.isEnabled = tab.webView.canGoForward
-        // The floating download action belongs to the start page only.
-        downloadFAB.isHidden = !tab.isStartPage
         if !addressField.isFirstResponder {
             addressField.text = tab.sessionURL?.absoluteString ?? ""
         }
         reloadButton.accessibilityLabel = tab.webView.isLoading ? "Stop loading" : "Reload page"
+        syncStartDashboard()
+    }
+
+    private func syncStartDashboard() {
+        guard let tab = activeTab else {
+            startDashboard.view.isHidden = true
+            return
+        }
+        let showsDashboard = tab.isPresentingStartPage
+        startDashboard.view.isHidden = !showsDashboard
+        tab.webView.isUserInteractionEnabled = !showsDashboard
+        tab.webView.accessibilityElementsHidden = showsDashboard
+        startDashboard.configure(isPrivate: tab.isPrivate)
+    }
+
+    private func performQuickAction(_ action: String) {
+        switch action {
+        case "private": openNewTab(privateMode: true)
+        case "qr": openQRScanner()
+        case "voice": openVoiceSearch()
+        case "search": addressField.becomeFirstResponder()
+        case "download-video": openVideoDownloader()
+        case "unsupported-video":
+            let alert = UIAlertController(
+                title: "Unsupported video stream",
+                message: "This video uses a protected, blob, or adaptive stream that cannot be opened directly. Try Download Media from Page.",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: L.t("done"), style: .default))
+            present(alert, animated: true)
+        case "downloads":
+            appRouteHandler?.navigate(to: .downloads)
+        default: break
+        }
     }
 
     private func closeAllTabs() {
@@ -1188,7 +1202,7 @@ extension BrowserViewController {
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
         suggestionsTable.isHidden = true
-        suggestionsGlass?.isHidden = true
+        suggestionsPanel?.isHidden = true
         guard let tab = activeTab else { return true }
         let input = textField.text ?? ""
         guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
@@ -1204,7 +1218,7 @@ extension BrowserViewController {
 
     func textFieldDidEndEditing(_ textField: UITextField) {
         suggestionsTable.isHidden = true
-        suggestionsGlass?.isHidden = true
+        suggestionsPanel?.isHidden = true
         // Restore the current URL when the user dismisses the keyboard without navigating.
         if (textField.text ?? "").isEmpty {
             textField.text = activeTab?.sessionURL?.absoluteString ?? ""
@@ -1224,7 +1238,7 @@ extension BrowserViewController {
             suggestions = []
             suggestionsTable.reloadData()
             suggestionsTable.isHidden = true
-            suggestionsGlass?.isHidden = true
+            suggestionsPanel?.isHidden = true
             return true
         }
         SearchEngine.suggestions(for: query) { [weak self] results in
@@ -1237,7 +1251,7 @@ extension BrowserViewController {
                 self.suggestions = results
                 self.suggestionsTable.reloadData()
                 self.suggestionsTable.isHidden = results.isEmpty
-                self.suggestionsGlass?.isHidden = results.isEmpty
+                self.suggestionsPanel?.isHidden = results.isEmpty
             }
         }
         return true
@@ -1272,7 +1286,7 @@ extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {
         addressField.text = query
         addressField.resignFirstResponder()
         suggestionsTable.isHidden = true
-        suggestionsGlass?.isHidden = true
+        suggestionsPanel?.isHidden = true
         guard let tab = activeTab, let url = SearchEngine.effectiveSearchURL(for: query) else { return }
         tab.load(url: url)
     }

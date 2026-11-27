@@ -12,6 +12,7 @@ final class ScreenshotTests: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app.launchEnvironment["MAGDY_UI_TEST"] = "1"
+        app.launchEnvironment["MAGDY_LIBRARY_UI_SEED"] = "1"
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
         snap("00-launch")
@@ -56,7 +57,7 @@ final class ScreenshotTests: XCTestCase {
     func testCaptureScreens() {
         waitUntilHittable(app.buttons["download-video"])
         waitUntilHittable(app.textFields["address-field"])
-        XCTAssertTrue(app.staticTexts["MAGDY"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["start-title"].waitForExistence(timeout: 10))
         snap("01-start")
 
         waitUntilHittable(app.buttons["browser-tabs"])
@@ -74,7 +75,7 @@ final class ScreenshotTests: XCTestCase {
 
         app.buttons["menu-close"].tap()
         waitUntilHittable(app.textFields["address-field"])
-        app.buttons["Search"].tap()
+        app.buttons["start-search"].tap()
         waitUntilHittable(app.keyboards.firstMatch)
         app.textFields["address-field"].typeText("magdy")
 

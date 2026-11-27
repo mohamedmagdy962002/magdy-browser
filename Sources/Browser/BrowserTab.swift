@@ -11,6 +11,7 @@ final class BrowserTab: NSObject {
 
     var onTitleChange: ((BrowserTab) -> Void)?
     var onLoadingChange: ((BrowserTab, Bool) -> Void)?
+    var onPresentationChange: ((BrowserTab) -> Void)?
     var onProgress: ((BrowserTab, Double) -> Void)?
     /// Fired when the user taps a video element on the page.
     var onVideoTapped: ((URL, String) -> Void)?
@@ -64,6 +65,10 @@ final class BrowserTab: NSObject {
 
     var isStartPage: Bool {
         failedURL == nil && displayURL?.isWebURL != true
+    }
+
+    var isPresentingStartPage: Bool {
+        failedURL == nil && pendingURL == nil && displayURL?.isWebURL != true
     }
 
     // MARK: - Per-site ad allowlist
@@ -283,6 +288,7 @@ final class BrowserTab: NSObject {
         isLoadingErrorPage = false
         isLoadingStartPage = false
         onLoadingChange?(self, false)
+        onPresentationChange?(self)
         // The replacement webView reuses baseConfiguration, whose userContentController
         // already carries every rule list — do NOT reset appliedRuleLists (double-attach).
         webView = WKWebView(frame: frame, configuration: baseConfiguration)
@@ -318,6 +324,7 @@ final class BrowserTab: NSObject {
         navigationID = UUID()
         isLoadingErrorPage = false
         isLoadingStartPage = true
+        onPresentationChange?(self)
         // Documents is the base URL so the wallpaper resolves as a relative resource.
         let navigation = webView.loadHTMLString(
             SpeedDialPage.html(includeHistory: !isPrivate),
@@ -336,6 +343,7 @@ final class BrowserTab: NSObject {
         navigationID = UUID()
         isLoadingErrorPage = false
         isLoadingStartPage = false
+        onPresentationChange?(self)
         applyRememberedUserAgent(for: url)
         activeNavigation = webView.load(URLRequest(url: url))
     }
@@ -373,6 +381,7 @@ final class BrowserTab: NSObject {
         isLoadingErrorPage = false
         isLoadingStartPage = false
         onLoadingChange?(self, false)
+        onPresentationChange?(self)
     }
 }
 
@@ -391,6 +400,7 @@ extension BrowserTab: WKNavigationDelegate {
             isLoadingStartPage = false
         }
         onLoadingChange?(self, true)
+        onPresentationChange?(self)
         // Old page's feeds must not leak into the new one's menu.
         rssFeeds = []
     }
@@ -401,6 +411,7 @@ extension BrowserTab: WKNavigationDelegate {
         isLoadingStartPage = false
         failedURL = nil
         pendingURL = webView.url
+        onPresentationChange?(self)
         // Host is final here — re-evaluate the per-site ad allowlist for this navigation.
         applyNewRuleLists()
         if !isPrivate, let url = webView.url, url.isWebURL {
@@ -417,6 +428,7 @@ extension BrowserTab: WKNavigationDelegate {
             pendingURL = nil
             activeNavigation = nil
             generatedNavigation = nil
+            onPresentationChange?(self)
             return
         }
         isLoadingStartPage = false
@@ -438,6 +450,7 @@ extension BrowserTab: WKNavigationDelegate {
         detectRSSFeeds(in: webView, navigationID: navigationID)
         activeNavigation = nil
         generatedNavigation = nil
+        onPresentationChange?(self)
     }
 
     /// Reads the page's advertised RSS/Atom links so the menu can offer them.
@@ -472,9 +485,11 @@ extension BrowserTab: WKNavigationDelegate {
             pendingURL = nil
             isLoadingErrorPage = false
             isLoadingStartPage = false
+            onPresentationChange?(self)
             return
         }
         showLoadError(in: webView)
+        onPresentationChange?(self)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -487,9 +502,11 @@ extension BrowserTab: WKNavigationDelegate {
             pendingURL = nil
             isLoadingErrorPage = false
             isLoadingStartPage = false
+            onPresentationChange?(self)
             return
         }
         showLoadError(in: webView)
+        onPresentationChange?(self)
     }
 
     private func showLoadError(in webView: WKWebView) {

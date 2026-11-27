@@ -229,6 +229,11 @@ final class EmptyStateView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func configure(title: String, message: String) {
+        titleLabel.text = title
+        messageLabel.text = message
+    }
+
     @objc private func performAction() {
         actionHandler?()
     }
