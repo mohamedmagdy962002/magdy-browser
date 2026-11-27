@@ -65,11 +65,6 @@ final class StartDashboardViewController: UIViewController, UICollectionViewDele
             forSupplementaryViewOfKind: Self.headerKind,
             withReuseIdentifier: DashboardHeaderView.reuseIdentifier
         )
-        collectionView.register(
-            DashboardSectionHeaderView.self,
-            forSupplementaryViewOfKind: Self.headerKind,
-            withReuseIdentifier: DashboardSectionHeaderView.reuseIdentifier
-        )
 
         view.addSubview(wallpaper)
         view.addSubview(scrim)
@@ -173,6 +168,7 @@ final class StartDashboardViewController: UIViewController, UICollectionViewDele
             guard let self else { return }
             self.refreshVisibleViews()
             if self.shouldResetScrollOffset {
+                self.collectionView.collectionViewLayout.invalidateLayout()
                 self.collectionView.setContentOffset(.zero, animated: false)
                 self.shouldResetScrollOffset = false
             }
@@ -235,15 +231,12 @@ final class StartDashboardViewController: UIViewController, UICollectionViewDele
         }
         dataSource.supplementaryViewProvider = { [weak self] collectionView, _, indexPath in
             guard let self else { return nil }
-            let sections = self.dataSource.snapshot().sectionIdentifiers
-            let isHero = sections.indices.contains(indexPath.section) && sections[indexPath.section] == sections.first
-            let identifier = isHero ? DashboardHeaderView.reuseIdentifier : DashboardSectionHeaderView.reuseIdentifier
             let view = collectionView.dequeueReusableSupplementaryView(
                 ofKind: Self.headerKind,
-                withReuseIdentifier: identifier,
+                withReuseIdentifier: DashboardHeaderView.reuseIdentifier,
                 for: indexPath
             )
-            configureSupplementaryView(view, at: indexPath)
+            self.configureSupplementaryView(view, at: indexPath)
             return view
         }
         return dataSource
@@ -253,14 +246,13 @@ final class StartDashboardViewController: UIViewController, UICollectionViewDele
         let sections = dataSource.snapshot().sectionIdentifiers
         guard sections.indices.contains(indexPath.section) else { return }
         let section = sections[indexPath.section]
-        if section == sections.first, let header = view as? DashboardHeaderView {
+        if let header = view as? DashboardHeaderView {
+            let showsHero = section == sections.first
             header.onSearch = onSearch
             header.onDownloadVideo = onDownloadVideo
             header.onQuickAction = onQuickAction
             header.onFirstSectionAction = { [weak self] in self?.onSeeAll?(section) }
-            header.configure(isPrivate: isPrivate, section: section)
-        } else if let header = view as? DashboardSectionHeaderView {
-            header.configure(title: section.title) { [weak self] in self?.onSeeAll?(section) }
+            header.configure(isPrivate: isPrivate, section: section, showsHero: showsHero)
         }
     }
 
@@ -476,7 +468,7 @@ final class DashboardHeaderView: UICollectionReusableView {
             quickActionsStack.trailingAnchor.constraint(equalTo: quickActionsScrollView.contentLayoutGuide.trailingAnchor),
             quickActionsStack.heightAnchor.constraint(equalTo: quickActionsScrollView.frameLayoutGuide.heightAnchor)
         ])
-        configure(isPrivate: false, section: .empty)
+        configure(isPrivate: false, section: .empty, showsHero: true)
     }
 
     required init?(coder: NSCoder) {
@@ -491,7 +483,12 @@ final class DashboardHeaderView: UICollectionReusableView {
         onFirstSectionAction = nil
     }
 
-    func configure(isPrivate: Bool, section: StartDashboardSection) {
+    func configure(isPrivate: Bool, section: StartDashboardSection, showsHero: Bool) {
+        brandRow.isHidden = !showsHero
+        searchButton.isHidden = !showsHero
+        downloadButton.isHidden = !showsHero
+        quickActionsScrollView.isHidden = !showsHero
+        noteLabel.isHidden = !showsHero
         searchButton.setTitle(L.t("dashboard_search"), for: .normal)
         downloadButton.setTitle(L.t("dashboard_download_video"), for: .normal)
         privateBadge.setTitle(L.t("dashboard_private"), for: .normal)
@@ -501,6 +498,7 @@ final class DashboardHeaderView: UICollectionReusableView {
         noteLabel.text = L.t("unlimited_note")
         firstSectionTitle.text = section.title
         firstSectionAction.setTitle(L.t("dashboard_see_all"), for: .normal)
+        firstSectionAction.accessibilityIdentifier = showsHero ? "start-see-all" : "start-section-see-all"
         firstSectionRow.isHidden = section == .empty
         for case let button as UIButton in quickActionsStack.arrangedSubviews {
             let spec = Self.quickActions.first { $0.tag == button.tag }
@@ -544,62 +542,6 @@ final class DashboardHeaderView: UICollectionReusableView {
         default: action = "downloads"
         }
         onQuickAction?(action)
-    }
-}
-
-final class DashboardSectionHeaderView: UICollectionReusableView {
-    static let reuseIdentifier = "start-dashboard-section"
-
-    private let titleLabel = UILabel()
-    private let actionButton = UIButton(type: .system)
-    private var onAction: (() -> Void)?
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = Theme.canvas
-
-        titleLabel.font = Theme.headline
-        titleLabel.textColor = Theme.textPrimary
-        titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        actionButton.titleLabel?.font = Theme.subhead
-        actionButton.titleLabel?.adjustsFontForContentSizeCategory = true
-        actionButton.tintColor = Theme.accentText
-        actionButton.accessibilityIdentifier = "start-section-see-all"
-        actionButton.addTarget(self, action: #selector(performAction), for: .touchUpInside)
-        actionButton.translatesAutoresizingMaskIntoConstraints = false
-
-        addSubview(titleLabel)
-        addSubview(actionButton)
-        NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: Theme.Spacing.x3),
-            titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Theme.Spacing.x2),
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Spacing.x4),
-            actionButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            actionButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Theme.Spacing.x4),
-            actionButton.heightAnchor.constraint(greaterThanOrEqualToConstant: Theme.minimumTarget),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: actionButton.leadingAnchor, constant: -Theme.Spacing.x2)
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        onAction = nil
-    }
-
-    func configure(title: String, onAction: @escaping () -> Void) {
-        titleLabel.text = title
-        actionButton.setTitle(L.t("dashboard_see_all"), for: .normal)
-        self.onAction = onAction
-    }
-
-    @objc private func performAction() {
-        onAction?()
     }
 }
 

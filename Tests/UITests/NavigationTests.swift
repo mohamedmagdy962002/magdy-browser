@@ -50,7 +50,7 @@ final class NavigationTests: XCTestCase {
 
         app.buttons["library-manage"].tap()
         let downloadsAction = app.buttons.matching(
-            NSPredicate(format: "label == %@ AND isHittable == true", "Downloads")
+            NSPredicate(format: "label == %@", "Downloads")
         ).firstMatch
         waitForHittable(downloadsAction)
         downloadsAction.tap()

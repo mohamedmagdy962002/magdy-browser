@@ -56,9 +56,14 @@ final class ScreenshotTests: XCTestCase {
 
     private func dismissKeyboardIntroductionIfNeeded() {
         let continueButton = app.buttons["Continue"]
-        if continueButton.waitForExistence(timeout: 1) {
-            continueButton.tap()
-        }
+        guard continueButton.waitForExistence(timeout: 3) else { return }
+        waitUntilHittable(continueButton)
+        continueButton.tap()
+        let dismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: continueButton
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
     }
 
     func testCaptureScreens() {
@@ -83,7 +88,7 @@ final class ScreenshotTests: XCTestCase {
         app.buttons["menu-close"].tap()
         waitUntilHittable(app.textFields["address-field"])
         app.buttons["start-search"].tap()
-        waitUntilHittable(app.keyboards.firstMatch)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         dismissKeyboardIntroductionIfNeeded()
         app.textFields["address-field"].typeText("magdy")
 
@@ -123,7 +128,7 @@ final class ScreenshotTests: XCTestCase {
 
         waitUntilHittable(app.textFields["address-field"])
         app.textFields["address-field"].tap()
-        waitUntilHittable(app.keyboards.firstMatch)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
         dismissKeyboardIntroductionIfNeeded()
         app.textFields["address-field"].typeText("magdy")
         XCTAssertFalse(app.tables["search-suggestions"].isHittable)
