@@ -102,7 +102,6 @@ enum Theme {
             view.backgroundColor = bar
         } else if #available(iOS 26.0, *) {
             let glass = UIGlassEffect()
-            glass.isTinted = true
             glass.tintColor = surface.withAlphaComponent(0.16)
             view = UIVisualEffectView(effect: glass)
         } else {
@@ -230,33 +229,41 @@ enum Theme {
         UINavigationBar.appearance().compactAppearance = navigation
         UINavigationBar.appearance().tintColor = accentText
 
-        let tab = UITabBarAppearance()
-        if UIAccessibility.isReduceTransparencyEnabled {
-            tab.configureWithOpaqueBackground()
-            tab.backgroundColor = bar
+        if #available(iOS 26.0, *) {
+            UITabBar.appearance().tintColor = accentText
+            UITabBar.appearance().unselectedItemTintColor = textSecondary
         } else {
-            tab.configureWithTransparentBackground()
-            tab.backgroundColor = .clear
-            if #available(iOS 26.0, *) {
-                tab.backgroundEffect = UIGlassEffect()
+            let tab = UITabBarAppearance()
+            if UIAccessibility.isReduceTransparencyEnabled {
+                tab.configureWithOpaqueBackground()
+                tab.backgroundColor = bar
             } else {
+                tab.configureWithTransparentBackground()
+                tab.backgroundColor = .clear
                 tab.backgroundEffect = UIBlurEffect(style: .systemMaterial)
             }
+            tab.shadowColor = hairline
+            tab.stackedLayoutAppearance.normal.iconColor = textSecondary
+            tab.stackedLayoutAppearance.normal.titleTextAttributes = [
+                .foregroundColor: textSecondary,
+                .font: caption
+            ]
+            tab.stackedLayoutAppearance.selected.iconColor = accentText
+            tab.stackedLayoutAppearance.selected.titleTextAttributes = [
+                .foregroundColor: accentText,
+                .font: caption
+            ]
+            UITabBar.appearance().standardAppearance = tab
+            UITabBar.appearance().scrollEdgeAppearance = tab
         }
-        tab.shadowColor = hairline
-        tab.stackedLayoutAppearance.normal.iconColor = textSecondary
-        tab.stackedLayoutAppearance.normal.titleTextAttributes = [
-            .foregroundColor: textSecondary,
-            .font: caption
-        ]
-        tab.stackedLayoutAppearance.selected.iconColor = accentText
-        tab.stackedLayoutAppearance.selected.titleTextAttributes = [
-            .foregroundColor: accentText,
-            .font: caption
-        ]
-        UITabBar.appearance().standardAppearance = tab
-        UITabBar.appearance().scrollEdgeAppearance = tab
-        UITabBar.appearance().tintColor = accentText
+        UITabBarItem.appearance().setTitleTextAttributes(
+            [.foregroundColor: textSecondary, .font: caption],
+            for: .normal
+        )
+        UITabBarItem.appearance().setTitleTextAttributes(
+            [.foregroundColor: accentText, .font: caption],
+            for: .selected
+        )
 
         UITableView.appearance().backgroundColor = canvas
         UISwitch.appearance().onTintColor = accent

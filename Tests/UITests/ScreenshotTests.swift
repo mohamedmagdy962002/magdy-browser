@@ -74,6 +74,7 @@ final class ScreenshotTests: XCTestCase {
         let statusBarBottom = statusBar.exists ? statusBar.frame.maxY : 0
         XCTAssertGreaterThanOrEqual(addressField.frame.minY, statusBarBottom + 4)
         let browserTabs = app.buttons["browser-tabs"]
+        waitUntilHittable(browserTabs)
         XCTAssertLessThan(browserTabs.frame.maxY, app.tabBars.firstMatch.frame.minY)
         XCTAssertTrue(app.staticTexts["start-title"].waitForExistence(timeout: 10))
         snap("01-start")

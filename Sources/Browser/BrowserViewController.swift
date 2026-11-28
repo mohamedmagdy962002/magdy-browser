@@ -893,8 +893,8 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         webContainer.addSubview(tab.webView)
         NSLayoutConstraint.activate(webViewConstraints)
         webContainer.bringSubviewToFront(startDashboard.view)
-        view.bringSubviewToFront(addressField)
-        view.bringSubviewToFront(reloadButton)
+        omnibox.contentView.bringSubviewToFront(addressField)
+        omnibox.contentView.bringSubviewToFront(reloadButton)
         view.bringSubviewToFront(progressBar)
 
         // Apply global page styles to an already-loaded tab (they are per-webView
