@@ -96,7 +96,19 @@ enum Theme {
     }
 
     static func liquidGlassView(corner: CGFloat) -> UIVisualEffectView {
-        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        let view: UIVisualEffectView
+        if UIAccessibility.isReduceTransparencyEnabled {
+            view = UIVisualEffectView(effect: nil)
+            view.backgroundColor = bar
+        } else if #available(iOS 26.0, *) {
+            let glass = UIGlassEffect()
+            glass.isTinted = true
+            glass.tintColor = surface.withAlphaComponent(0.16)
+            view = UIVisualEffectView(effect: glass)
+        } else {
+            view = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+            view.backgroundColor = bar.withAlphaComponent(0.68)
+        }
         view.layer.cornerRadius = corner
         view.layer.cornerCurve = .continuous
         view.layer.borderWidth = 1
@@ -219,8 +231,18 @@ enum Theme {
         UINavigationBar.appearance().tintColor = accentText
 
         let tab = UITabBarAppearance()
-        tab.configureWithOpaqueBackground()
-        tab.backgroundColor = bar
+        if UIAccessibility.isReduceTransparencyEnabled {
+            tab.configureWithOpaqueBackground()
+            tab.backgroundColor = bar
+        } else {
+            tab.configureWithTransparentBackground()
+            tab.backgroundColor = .clear
+            if #available(iOS 26.0, *) {
+                tab.backgroundEffect = UIGlassEffect()
+            } else {
+                tab.backgroundEffect = UIBlurEffect(style: .systemMaterial)
+            }
+        }
         tab.shadowColor = hairline
         tab.stackedLayoutAppearance.normal.iconColor = textSecondary
         tab.stackedLayoutAppearance.normal.titleTextAttributes = [

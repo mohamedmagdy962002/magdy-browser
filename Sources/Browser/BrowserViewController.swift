@@ -11,7 +11,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
     private var webViewConstraints: [NSLayoutConstraint] = []
     private var videoPresentationID = UUID()
 
-    private let omnibox = UIView()
+    private let omnibox = Theme.liquidGlassView(corner: 26)
     private let webContainer = UIView()
     private let addressField = UITextField()
     private let reloadButton = UIButton(type: .system)
@@ -179,7 +179,9 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         startDashboard.didMove(toParent: self)
 
         toolbar.axis = .horizontal
-        toolbar.distribution = .fillEqually
+        toolbar.alignment = .center
+        toolbar.distribution = .equalSpacing
+        toolbar.spacing = 8
         toolbar.translatesAutoresizingMaskIntoConstraints = false
 
         backButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
@@ -202,7 +204,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         newTabButton.setImage(UIImage(systemName: "plus"), for: .normal)
         newTabButton.tintColor = .white
         newTabButton.backgroundColor = Theme.primary
-        newTabButton.layer.cornerRadius = 15
+        newTabButton.layer.cornerRadius = Theme.minimumTarget / 2
         newTabButton.layer.cornerCurve = .continuous
         newTabButton.addTarget(self, action: #selector(newTabTapped), for: .touchUpInside)
         newTabButton.accessibilityIdentifier = "browser-new-tab"
@@ -221,31 +223,25 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         toolbar.addArrangedSubview(newTabButton)
         toolbar.addArrangedSubview(menuButton)
 
-        omnibox.backgroundColor = Theme.field
-        omnibox.layer.cornerRadius = 26
-        omnibox.layer.cornerCurve = .continuous
-        omnibox.layer.borderWidth = 1
-        omnibox.layer.borderColor = Theme.hairline.cgColor
+        for button in [backButton, forwardButton, tabButton, newTabButton, menuButton] {
+            button.widthAnchor.constraint(equalToConstant: Theme.minimumTarget).isActive = true
+            button.heightAnchor.constraint(equalToConstant: Theme.minimumTarget).isActive = true
+        }
+
         omnibox.isAccessibilityElement = false
-        omnibox.accessibilityElementsHidden = true
+        omnibox.accessibilityElementsHidden = false
         omnibox.translatesAutoresizingMaskIntoConstraints = false
 
-        let toolbarChrome = UIView()
-        toolbarChrome.backgroundColor = Theme.surface
-        toolbarChrome.layer.cornerRadius = 22
-        toolbarChrome.layer.cornerCurve = .continuous
-        toolbarChrome.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
-        toolbarChrome.layer.borderWidth = 1
-        toolbarChrome.layer.borderColor = Theme.hairline.cgColor
+        let toolbarChrome = Theme.liquidGlassView(corner: 26)
         toolbarChrome.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(webContainer)
         view.addSubview(omnibox)
-        view.addSubview(addressField)
-        view.addSubview(reloadButton)
+        omnibox.contentView.addSubview(addressField)
+        omnibox.contentView.addSubview(reloadButton)
         view.addSubview(progressBar)
         view.addSubview(toolbarChrome)
-        toolbarChrome.addSubview(toolbar)
+        toolbarChrome.contentView.addSubview(toolbar)
 
         let suggestionsPanel = UIView()
         suggestionsPanel.backgroundColor = Theme.surface
@@ -277,13 +273,16 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         // Position-dependent anchors: two full sets, swapped by the
         // "Search Bar Position" setting (omnibox top = default, bottom = Aloha).
         let top = UserDefaults.standard.bool(forKey: UserDefaultsKey.omniboxBottomKey) == false
-        let omniboxTop = omnibox.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
-        let omniboxBottom = omnibox.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -8)
+        let omniboxTop = omnibox.topAnchor.constraint(
+            equalTo: view.safeAreaLayoutGuide.topAnchor,
+            constant: 8
+        )
+        let omniboxBottom = omnibox.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -12)
         let progressTop = progressBar.topAnchor.constraint(equalTo: omnibox.bottomAnchor)
         let progressTopAlt = progressBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
         let webTop = webContainer.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 2)
         let webTopAlt = webContainer.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
-        let webBottom = webContainer.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor)
+        let webBottom = webContainer.bottomAnchor.constraint(equalTo: toolbarChrome.topAnchor, constant: -12)
         let webBottomAlt = webContainer.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -2)
         let suggestionsTop = suggestionsTable.topAnchor.constraint(equalTo: omnibox.bottomAnchor, constant: 8)
         let suggestionsBottom = suggestionsTable.bottomAnchor.constraint(equalTo: omnibox.topAnchor, constant: -8)
@@ -295,47 +294,44 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
 
         NSLayoutConstraint.activate([
             // Static omnibox sizing (position anchors are in the top/bottom sets).
-            omnibox.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            omnibox.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            omnibox.heightAnchor.constraint(equalToConstant: 52),
+            omnibox.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            omnibox.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            omnibox.heightAnchor.constraint(equalToConstant: Theme.omniboxHeight),
 
-            addressField.leadingAnchor.constraint(equalTo: omnibox.leadingAnchor, constant: 12),
+            addressField.leadingAnchor.constraint(equalTo: omnibox.contentView.leadingAnchor, constant: 16),
             addressField.trailingAnchor.constraint(equalTo: reloadButton.leadingAnchor, constant: -4),
-            addressField.centerYAnchor.constraint(equalTo: omnibox.centerYAnchor),
-            addressField.heightAnchor.constraint(equalToConstant: 44),
-            reloadButton.trailingAnchor.constraint(equalTo: omnibox.trailingAnchor, constant: -4),
-            reloadButton.centerYAnchor.constraint(equalTo: omnibox.centerYAnchor),
-            reloadButton.heightAnchor.constraint(equalToConstant: 44),
+            addressField.centerYAnchor.constraint(equalTo: omnibox.contentView.centerYAnchor),
+            addressField.heightAnchor.constraint(equalToConstant: Theme.minimumTarget),
+            reloadButton.trailingAnchor.constraint(equalTo: omnibox.contentView.trailingAnchor, constant: -4),
+            reloadButton.centerYAnchor.constraint(equalTo: omnibox.contentView.centerYAnchor),
+            reloadButton.heightAnchor.constraint(equalToConstant: Theme.minimumTarget),
 
-            // Layout guards: the omnibox can never stretch beyond its capsule,
-            // no matter which position set is active (fixes bottom-mode stretch).
-            omnibox.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor),
-            omnibox.bottomAnchor.constraint(lessThanOrEqualTo: toolbarChrome.topAnchor, constant: -8),
+            omnibox.topAnchor.constraint(greaterThanOrEqualTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            omnibox.bottomAnchor.constraint(lessThanOrEqualTo: toolbarChrome.topAnchor, constant: -12),
 
-            progressBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            progressBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            progressBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            progressBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             progressBar.heightAnchor.constraint(equalToConstant: 2),
 
-            // Dock is flush: full width, sitting directly on the tab bar.
-            toolbarChrome.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            toolbarChrome.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            toolbarChrome.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-            toolbarChrome.heightAnchor.constraint(equalToConstant: 54),
+            toolbarChrome.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            toolbarChrome.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            toolbarChrome.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+            toolbarChrome.heightAnchor.constraint(equalToConstant: 58),
 
-            toolbar.leadingAnchor.constraint(equalTo: toolbarChrome.leadingAnchor, constant: 4),
-            toolbar.trailingAnchor.constraint(equalTo: toolbarChrome.trailingAnchor, constant: -4),
-            toolbar.topAnchor.constraint(equalTo: toolbarChrome.topAnchor),
-            toolbar.bottomAnchor.constraint(equalTo: toolbarChrome.bottomAnchor),
+            toolbar.leadingAnchor.constraint(equalTo: toolbarChrome.contentView.leadingAnchor, constant: 8),
+            toolbar.trailingAnchor.constraint(equalTo: toolbarChrome.contentView.trailingAnchor, constant: -8),
+            toolbar.topAnchor.constraint(equalTo: toolbarChrome.contentView.topAnchor),
+            toolbar.bottomAnchor.constraint(equalTo: toolbarChrome.contentView.bottomAnchor),
 
             webContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             webContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            suggestionsTable.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            suggestionsTable.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            suggestionsTable.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            suggestionsTable.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
             suggestionsTable.heightAnchor.constraint(lessThanOrEqualToConstant: 260),
 
-            playerBanner.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            playerBanner.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            playerBanner.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            playerBanner.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
             playerBanner.heightAnchor.constraint(equalToConstant: 46),
 
             suggestionsPanel.topAnchor.constraint(equalTo: suggestionsTable.topAnchor),
@@ -345,7 +341,7 @@ final class BrowserViewController: UIViewController, UITextFieldDelegate {
         ])
 
         // Swipe on the toolbar switches tabs.
-        toolbarChrome.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(toolbarSwiped(_:))))
+        toolbarChrome.contentView.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(toolbarSwiped(_:))))
 
         // Keep the banner in sync with the audio session.
         playerBanner.onStop = { [weak self] in

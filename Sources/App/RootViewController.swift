@@ -25,6 +25,7 @@ final class RootViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         overrideUserInterfaceStyle = Theme.forcedStyle
+        view.backgroundColor = Theme.canvas
         view.accessibilityIdentifier = "app-root"
         updateSemanticContentAttribute()
 
@@ -107,7 +108,7 @@ final class RootViewController: UIViewController {
         NSLayoutConstraint.activate([
             container.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             container.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            container.view.topAnchor.constraint(equalTo: view.topAnchor),
+            container.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             container.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         coordinator.activate(container)

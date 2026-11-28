@@ -68,7 +68,13 @@ final class ScreenshotTests: XCTestCase {
 
     func testCaptureScreens() {
         waitUntilHittable(app.buttons["download-video"])
-        waitUntilHittable(app.textFields["address-field"])
+        let addressField = app.textFields["address-field"]
+        waitUntilHittable(addressField)
+        let statusBar = app.statusBars.firstMatch
+        let statusBarBottom = statusBar.exists ? statusBar.frame.maxY : 0
+        XCTAssertGreaterThanOrEqual(addressField.frame.minY, statusBarBottom + 4)
+        let browserTabs = app.buttons["browser-tabs"]
+        XCTAssertLessThan(browserTabs.frame.maxY, app.tabBars.firstMatch.frame.minY)
         XCTAssertTrue(app.staticTexts["start-title"].waitForExistence(timeout: 10))
         snap("01-start")
 

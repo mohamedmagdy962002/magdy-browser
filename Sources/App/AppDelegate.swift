@@ -23,6 +23,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         ContentBlocker.shared.load()
 
         let window = UIWindow(frame: UIScreen.main.bounds)
+        window.backgroundColor = Theme.canvas
         let root = RootViewController()
         root.prepareForLaunch()
         window.rootViewController = root
